@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 from dataset.loader import PTBXLLoader
+from dataset.model import MLP
 from dataset.partitioner import DirichletPartitioner
 
 
@@ -65,3 +66,62 @@ class TestDirichletPartitioner:
     def test_alpha_must_be_positive(self):
         with pytest.raises(ValueError, match="alpha must be > 0"):
             DirichletPartitioner(alpha=0.0)
+
+
+class TestMLP:
+    def test_forward_shape(self):
+        model = MLP(input_dim=120, hidden_dim=8, num_classes=3, seed=42)
+        X = np.random.randn(10, 120)
+        probs, cache = model.forward(X)
+        assert probs.shape == (10, 3)
+        np.testing.assert_almost_equal(probs.sum(axis=1), np.ones(10))
+
+    def test_backward_shape(self):
+        model = MLP(input_dim=120, hidden_dim=8, num_classes=3, seed=42)
+        X = np.random.randn(10, 120)
+        y = np.random.randint(0, 3, size=10)
+        probs, cache = model.forward(X)
+        grads = model.backward(X, y, cache)
+        assert grads["W1"].shape == model.W1.shape
+        assert grads["b1"].shape == model.b1.shape
+        assert grads["W2"].shape == model.W2.shape
+        assert grads["b2"].shape == model.b2.shape
+
+    def test_compute_gradient_flat_shape(self):
+        model = MLP(input_dim=120, hidden_dim=8, num_classes=3, seed=42)
+        X = np.random.randn(5, 120)
+        y = np.random.randint(0, 3, size=5)
+        global_weights = model.get_weights()
+        flat_grad = model.compute_gradient(X, y, global_weights)
+        expected = 120 * 8 + 8 + 8 * 3 + 3
+        assert flat_grad.shape == (expected,)
+
+    def test_get_set_weights_roundtrip(self):
+        model = MLP(input_dim=12, hidden_dim=4, num_classes=2, seed=42)
+        w = model.get_weights()
+        model2 = MLP(input_dim=12, hidden_dim=4, num_classes=2, seed=99)
+        model2.set_weights(w)
+        for key in w:
+            np.testing.assert_array_equal(model2.get_weights()[key], w[key])
+
+    def test_loss_decreases_with_training(self):
+        model = MLP(input_dim=12, hidden_dim=4, num_classes=2, seed=42)
+        X = np.random.randn(20, 12)
+        y = np.random.randint(0, 2, size=20)
+        global_w = model.get_weights()
+        loss_before = model.loss(X, y)
+        grad = model.compute_gradient(X, y, global_w)
+        lr = 0.1
+        flat_w = np.concatenate([v.ravel() for v in global_w.values()])
+        flat_w -= lr * grad
+        new_w = {}
+        start = 0
+        shapes = [(12, 4), (4,), (4, 2), (2,)]
+        keys = ["W1", "b1", "W2", "b2"]
+        for key, shape in zip(keys, shapes):
+            size = np.prod(shape)
+            new_w[key] = flat_w[start:start + size].reshape(shape)
+            start += size
+        model.set_weights(new_w)
+        loss_after = model.loss(X, y)
+        assert loss_after < loss_before, f"Loss increased: {loss_before:.4f} -> {loss_after:.4f}"
