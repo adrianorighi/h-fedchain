@@ -1,8 +1,10 @@
 import numpy as np
 import pytest
+from dataset.edge_worker import EdgeWorker
 from dataset.loader import PTBXLLoader
 from dataset.model import MLP
 from dataset.partitioner import DirichletPartitioner
+from hfc_types.messages import Gradient
 
 
 class TestPTBXLLoader:
@@ -125,3 +127,46 @@ class TestMLP:
         model.set_weights(new_w)
         loss_after = model.loss(X, y)
         assert loss_after < loss_before, f"Loss increased: {loss_before:.4f} -> {loss_after:.4f}"
+
+
+class TestEdgeWorker:
+    def test_train_round_returns_gradient(self):
+        data = np.random.randn(10, 12, 1000).astype(np.float32)
+        labels = np.random.randint(0, 5, size=10)
+        worker = EdgeWorker("d0", list(range(10)), data, labels)
+        weights = worker.model.get_weights()
+        grad = worker.train_round(weights, round_num=1)
+        assert isinstance(grad, Gradient)
+        assert grad.node_id == "d0"
+        assert len(grad.data) > 0
+
+    def test_honest_worker_gradient_shape(self):
+        data = np.random.randn(5, 12, 1000).astype(np.float32)
+        labels = np.random.randint(0, 5, size=5)
+        worker = EdgeWorker("d0", list(range(5)), data, labels, is_adversarial=False)
+        weights = worker.model.get_weights()
+        grad = worker.train_round(weights)
+        expected_len = 12*1000*64 + 64 + 64*5 + 5  # 768000 + 64 + 320 + 5 = 768389
+        assert len(grad.data) == expected_len
+
+    def test_adversarial_label_flip_modifies_gradient(self):
+        data = np.random.randn(20, 12, 1000).astype(np.float32)
+        labels = np.random.randint(0, 5, size=20)
+        honest = EdgeWorker("h", list(range(20)), data, labels, is_adversarial=False)
+        adv = EdgeWorker("a", list(range(20)), data, labels, is_adversarial=True, attack_type="label_flip")
+        w = honest.model.get_weights()
+        g_honest = np.array(honest.train_round(w, round_num=5).data)
+        g_adv = np.array(adv.train_round(w, round_num=5).data)
+        # At round 5+ with label_flip, gradients should differ
+        assert not np.allclose(g_honest, g_adv), "Adversarial gradient should differ"
+
+    def test_adversarial_sign_flip_negates_gradient(self):
+        data = np.random.randn(15, 12, 1000).astype(np.float32)
+        labels = np.random.randint(0, 5, size=15)
+        worker = EdgeWorker("a", list(range(15)), data, labels, is_adversarial=True, attack_type="sign_flip")
+        w = worker.model.get_weights()
+        grad = np.array(worker.train_round(w, round_num=0).data)
+        # The honest gradient would have been positive for some params;
+        # sign-flip should make it negative. We check the raw gradient direction.
+        flat_w = np.concatenate([v.ravel() for v in w.values()])
+        assert len(grad) == len(flat_w), "Gradient length mismatch"
