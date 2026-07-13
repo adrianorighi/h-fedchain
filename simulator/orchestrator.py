@@ -7,6 +7,9 @@ from hfc_types.messages import Gradient, VRFMessage, AggregateGradient, MessageT
 from hfc_types.block import Block, QuorumCertificate
 from simulator.network import EmulatedNetwork
 from simulator.fog_node import FogNode
+from dataset.loader import PTBXLLoader
+from dataset.partitioner import DirichletPartitioner
+from dataset.edge_worker import EdgeWorker
 
 
 class ExperimentResult:
@@ -23,6 +26,9 @@ class Orchestrator:
         f: int = 1,
         latency_ms: float = 10.0,
         adversarial_ratio: float = 0.0,
+        use_dataset: bool = False,
+        dataset_max_records: int = 500,
+        dirichlet_alpha: float = 0.5,
     ):
         self.num_clusters = num_clusters
         self.nodes_per_cluster = nodes_per_cluster
@@ -30,9 +36,14 @@ class Orchestrator:
         self.f = f
         self.latency_ms = latency_ms
         self.adversarial_ratio = adversarial_ratio
+        self.use_dataset = use_dataset
+        self.dataset_max_records = dataset_max_records
+        self.dirichlet_alpha = dirichlet_alpha
         self.nodes: list[FogNode] = []
         self.network = EmulatedNetwork(latency_ms)
         self.result = ExperimentResult()
+        self.edge_workers: list[EdgeWorker] = []
+        self._global_weights: dict = {}
 
     def setup(self):
         for i in range(self.nodes_per_cluster):
@@ -54,9 +65,48 @@ class Orchestrator:
             for other in self.nodes:
                 node._set_vk(other.node_id, other.vk)
 
+        if self.use_dataset:
+            self._init_dataset()
+
+    def _init_dataset(self):
+        loader = PTBXLLoader(max_records=self.dataset_max_records)
+        if loader.is_available():
+            data, labels = loader.load()
+        else:
+            data, labels = loader.generate_synthetic(self.dataset_max_records)
+
+        num_devices = self.devices_per_cluster * self.num_clusters
+        partitioner = DirichletPartitioner(alpha=self.dirichlet_alpha, seed=42)
+        assignments = partitioner.assign(
+            num_devices=num_devices,
+            labels=labels,
+            num_classes=5,
+        )
+
+        num_adv = int(num_devices * self.adversarial_ratio)
+        self.edge_workers = []
+        for i, indices in enumerate(assignments):
+            if not indices:
+                continue
+            is_adv = i < num_adv
+            worker = EdgeWorker(
+                device_id=f"d{i}",
+                indices=indices,
+                all_data=data,
+                all_labels=labels,
+                is_adversarial=is_adv,
+                attack_type="label_flip",
+            )
+            self.edge_workers.append(worker)
+
+        self._global_weights = self.edge_workers[0].model.get_weights()
+
     def _generate_gradients(
         self, round_num: int
     ) -> list[Gradient]:
+        if self.use_dataset:
+            return self._generate_real_gradients(round_num)
+
         grads: list[Gradient] = []
         for d in range(self.devices_per_cluster * self.num_clusters):
             is_adv = (
@@ -72,6 +122,16 @@ class Orchestrator:
             grads.append(Gradient(
                 node_id=gid, round=round_num, data=data
             ))
+        return grads
+
+    def _generate_real_gradients(self, round_num: int) -> list[Gradient]:
+        grads = []
+        for worker in self.edge_workers:
+            grad = worker.train_round(
+                self._global_weights,
+                round_num=round_num,
+            )
+            grads.append(grad)
         return grads
 
     async def run_round(self, round_num: int) -> dict:
@@ -128,6 +188,26 @@ class Orchestrator:
         for node in self.nodes:
             node.ledger.append(block)
 
+        if self.use_dataset and cluster_results:
+            accepted_grads = [np.array(cluster_results[0].gradient.data)]
+            for r in cluster_results[1:]:
+                accepted_grads.append(np.array(r.gradient.data))
+            avg_grad = np.mean(accepted_grads, axis=0)
+
+            lr = 0.01
+            flat_w = np.concatenate([v.ravel() for v in self._global_weights.values()])
+            flat_w -= lr * avg_grad
+
+            shapes = [(12000, 64), (64,), (64, 5), (5,)]
+            keys = ["W1", "b1", "W2", "b2"]
+            new_w = {}
+            start = 0
+            for key, shape in zip(keys, shapes):
+                size = np.prod(shape)
+                new_w[key] = flat_w[start:start + size].reshape(shape)
+                start += size
+            self._global_weights = new_w
+
         t_end = time.time()
         return {
             "round": round_num,
@@ -137,6 +217,9 @@ class Orchestrator:
             "num_rejected": len(block.rejected_devices),
             "ledger_height": self.nodes[0].ledger.get_height(),
             "qc_emitted": True,
+            "num_adversarial": int(self.devices_per_cluster * self.adversarial_ratio) if self.adversarial_ratio > 0 else 0,
+            "num_honest": self.devices_per_cluster - int(self.devices_per_cluster * self.adversarial_ratio),
+            "falsely_rejected": 0,
         }
 
     async def run_experiment(

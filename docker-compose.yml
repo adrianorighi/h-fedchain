@@ -1,0 +1,101 @@
+x-fog-common: &fog-common
+  build:
+    context: .
+    dockerfile: services/Dockerfile
+  networks:
+    - fog-net
+  environment:
+    F: "1"
+  stop_grace_period: 2s
+
+x-netem-sidecar: &netem-sidecar
+  image: alpine:3.18
+  cap_add:
+    - NET_ADMIN
+  command: >
+    sh -c "
+      apk add --no-cache iproute2 >/dev/null 2>&1 &&
+      while true; do
+        tc qdisc add dev eth0 root netem delay ${LATENCY_MS:-10}ms 2>/dev/null ||
+        tc qdisc change dev eth0 root netem delay ${LATENCY_MS:-10}ms;
+        sleep 5;
+      done
+    "
+  network_mode: "service:fn0"
+  depends_on:
+    - fn0
+
+services:
+  fn0:
+    <<: *fog-common
+    container_name: hfc-fn0
+    environment:
+      NODE_ID: "n0"
+      F: "1"
+
+  fn0-netem:
+    <<: *netem-sidecar
+    container_name: hfc-fn0-netem
+    environment:
+      LATENCY_MS: "10"
+    network_mode: "service:fn0"
+
+  fn1:
+    <<: *fog-common
+    container_name: hfc-fn1
+    environment:
+      NODE_ID: "n1"
+      F: "1"
+
+  fn1-netem:
+    <<: *netem-sidecar
+    container_name: hfc-fn1-netem
+    environment:
+      LATENCY_MS: "10"
+    network_mode: "service:fn1"
+
+  fn2:
+    <<: *fog-common
+    container_name: hfc-fn2
+    environment:
+      NODE_ID: "n2"
+      F: "1"
+
+  fn2-netem:
+    <<: *netem-sidecar
+    container_name: hfc-fn2-netem
+    environment:
+      LATENCY_MS: "10"
+    network_mode: "service:fn2"
+
+  fn3:
+    <<: *fog-common
+    container_name: hfc-fn3
+    environment:
+      NODE_ID: "n3"
+      F: "1"
+
+  fn3-netem:
+    <<: *netem-sidecar
+    container_name: hfc-fn3-netem
+    environment:
+      LATENCY_MS: "10"
+    network_mode: "service:fn3"
+
+  fn4:
+    <<: *fog-common
+    container_name: hfc-fn4
+    environment:
+      NODE_ID: "n4"
+      F: "1"
+
+  fn4-netem:
+    <<: *netem-sidecar
+    container_name: hfc-fn4-netem
+    environment:
+      LATENCY_MS: "10"
+    network_mode: "service:fn4"
+
+networks:
+  fog-net:
+    driver: bridge
