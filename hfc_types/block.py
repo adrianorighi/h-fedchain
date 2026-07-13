@@ -2,19 +2,21 @@ from dataclasses import dataclass, field
 from hashlib import sha256
 from typing import Optional
 
+from .messages import MessageType
+
 
 @dataclass
 class QuorumCertificate:
     round: int
     block_hash: bytes
     signatures: list[tuple[str, bytes]]
-    msg_type: str  # PREPARE, PRE_COMMIT, COMMIT
+    msg_type: MessageType
 
     def is_valid(self, quorum_size: int) -> bool:
         return len(self.signatures) >= quorum_size
 
 
-@dataclass
+@dataclass(frozen=True)
 class Block:
     round: int
     gradient_hash: bytes
@@ -33,7 +35,7 @@ class Block:
             str(self.timestamp) +
             self.prev_hash.hex()
         ).encode()
-        self.hash = sha256(payload).digest()
+        object.__setattr__(self, 'hash', sha256(payload).digest())
 
 
 @dataclass
