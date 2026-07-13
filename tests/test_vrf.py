@@ -15,10 +15,18 @@ def test_elect_returns_lowest_y():
     seed = b"seed_1"
     sk_map = {"A": b"sk_A", "B": b"sk_B", "C": b"sk_C"}
     vk_map = sk_map
-    candidates = [make_vrf(n, seed, sk_map) for n in ["A", "B", "C"]]
     election = VRFLeaderElection()
+    candidates = []
+    expected_leader = None
+    min_y = None
+    for n in ["A", "B", "C"]:
+        y, proof = election.evaluate(sk_map[n], seed)
+        candidates.append(VRFMessage(n, 1, y, proof))
+        if min_y is None or y < min_y:
+            min_y = y
+            expected_leader = n
     leader = election.elect(candidates, seed, vk_map)
-    assert leader in ("A", "B", "C")
+    assert leader == expected_leader, f"Expected {expected_leader}, got {leader}"
 
 
 def test_elect_rejects_invalid_proof():
