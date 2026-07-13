@@ -1,0 +1,17 @@
+[project]
+name = "h-fedchain"
+version = "0.1.0"
+description = "H-FedChain: Hierarchical Edge-Fog-Cloud with HotStuff BFT consensus for secure FL in IoHT"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.24",
+    "cryptography>=41.0",
+]
+
+[project.optional-dependencies]
+zkp = ["pysnark", "ethstark"]
+dev = ["pytest>=7.0", "pytest-asyncio>=0.21"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
