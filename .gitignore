@@ -3,3 +3,4 @@ docs/*
 __pycache__/
 .venv/
 results/
+*.egg-info/
