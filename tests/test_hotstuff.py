@@ -39,3 +39,104 @@ def test_quorum_size_calculation(qc_certifier):
     assert qc_certifier.quorum_size(5) == 4  # ceil(2*5/3) + 1
     assert qc_certifier.quorum_size(4) == 3
     assert qc_certifier.quorum_size(7) == 5
+
+
+from core.hotstuff.engine import HotStuffEngine
+from hfc_types.block import Block
+
+
+class TestHotStuffEngine:
+    @pytest.fixture
+    def engine(self):
+        return HotStuffEngine(
+            node_id="n0",
+            sk=b"sk_n0",
+            vk=b"vk_n0",
+            peers=["n0", "n1", "n2", "n3", "n4"],
+            n=5,
+            f=1,
+        )
+
+    @pytest.mark.asyncio
+    async def test_prepare_emits_vote(self, engine):
+        proposal = Block(
+            round=1,
+            gradient_hash=b"gh",
+            qc_commit=None,
+            stark_proof=None,
+            accepted_devices=[],
+            rejected_devices=[],
+            timestamp=100.0,
+            prev_hash=b"\x00" * 32,
+        )
+        vote = await engine.on_prepare(proposal)
+        assert vote is not None
+        assert vote.msg_type == MessageType.PREPARE
+        assert vote.round == 1
+
+    @pytest.mark.asyncio
+    async def test_double_prepare_returns_none(self, engine):
+        proposal = Block(
+            round=1, gradient_hash=b"gh", qc_commit=None,
+            stark_proof=None, accepted_devices=[], rejected_devices=[],
+            timestamp=100.0, prev_hash=b"\x00" * 32,
+        )
+        await engine.on_prepare(proposal)
+        vote2 = await engine.on_prepare(proposal)
+        assert vote2 is None
+
+    @pytest.mark.asyncio
+    async def test_full_flow(self, engine):
+        proposal = Block(
+            round=1, gradient_hash=b"gh", qc_commit=None,
+            stark_proof=None, accepted_devices=[], rejected_devices=[],
+            timestamp=100.0, prev_hash=b"\x00" * 32,
+        )
+        vote = await engine.on_prepare(proposal)
+        assert vote is not None
+
+        qc_prepare = QuorumCertifier().collect(
+            round=1, block_hash=proposal.hash,
+            msg_type=MessageType.PREPARE,
+            signatures=[("n0", b"s")] * 4,
+            quorum_size=4,
+        )
+        v2 = await engine.on_pre_commit(qc_prepare)
+        assert v2 is not None
+
+        qc_pre_commit = QuorumCertifier().collect(
+            round=1, block_hash=proposal.hash,
+            msg_type=MessageType.PRE_COMMIT,
+            signatures=[("n0", b"s")] * 4,
+            quorum_size=4,
+        )
+        v3 = await engine.on_commit(qc_pre_commit)
+        assert v3 is not None
+
+        qc_commit = QuorumCertifier().collect(
+            round=1, block_hash=proposal.hash,
+            msg_type=MessageType.COMMIT,
+            signatures=[("n0", b"s")] * 4,
+            quorum_size=4,
+        )
+        entry = await engine.on_qc_commit(qc_commit)
+        assert entry is not None
+
+
+class TestViewChange:
+    @pytest.fixture
+    def view_change(self):
+        from core.hotstuff.view_change import ViewChangeHandler
+        return ViewChangeHandler(n=5, f=1)
+
+    def test_detect_leader_failure(self, view_change):
+        assert view_change.should_change_view(leader_id="n0", timeout=True) is True
+
+    def test_no_change_when_leader_ok(self, view_change):
+        assert view_change.should_change_view(leader_id="n0", timeout=False) is False
+
+    def test_next_leader(self, view_change):
+        view_change.current_view = 1
+        assert view_change.next_leader() == "n0"
+        view_change.current_view = 2
+        assert view_change.next_leader() == "n1"
