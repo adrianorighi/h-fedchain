@@ -33,3 +33,12 @@ class TestMultiKrum:
         krum = MultiKrum()
         selected = krum.select([], 0)
         assert selected == []
+
+    def test_m_equals_one(self):
+        n, f = 5, 4  # m = 1
+        np.random.seed(42)
+        gradients = [np.random.randn(3) for _ in range(n)]
+        krum = MultiKrum()
+        selected = krum.select(gradients, f)
+        assert len(selected) == n - f
+        assert len(selected) == 1

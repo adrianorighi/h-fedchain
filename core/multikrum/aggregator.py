@@ -10,18 +10,20 @@ class MultiKrum:
         n = len(gradients)
         if n == 0:
             return []
-        if f >= n / 3:
+        m = n - f
+        if m <= 1:
+            return [0]
+        if f * 3 >= n:
             raise ValueError(
                 f"f must be < n/3, got f={f}, n={n}"
             )
-        m = n - f
         if n < 2:
             return [0]
 
         dist = np.zeros((n, n))
         for i in range(n):
             for j in range(i + 1, n):
-                d = float(np.linalg.norm(gradients[i] - gradients[j]))
+                d = np.linalg.norm(gradients[i] - gradients[j])
                 dist[i, j] = d
                 dist[j, i] = d
 
