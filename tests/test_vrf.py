@@ -1,44 +1,50 @@
-from hashlib import sha256
 import pytest
 from core.vrf.election import VRFLeaderElection
+from core.pki.ed25519 import generate_keypair
 from hfc_types.messages import VRFMessage
 
 
-def make_vrf(node_id, seed, sk_map):
-    sk = sk_map[node_id]
-    y = sha256(sk + seed).digest()
-    proof = sha256(b"vrf_proof:" + sk + seed).digest()
-    return VRFMessage(node_id, 1, y, proof)
+def make_vrf(node_id, seed, sk):
+    election = VRFLeaderElection()
+    y, proof = election.evaluate(sk, seed)
+    return VRFMessage(node_id=node_id, round=1, y=y, proof=proof)
 
 
 def test_elect_returns_lowest_y():
-    seed = b"seed_1"
-    sk_map = {"A": b"sk_A", "B": b"sk_B", "C": b"sk_C"}
-    vk_map = sk_map
+    seed = b"round_seed_1"
+    node_ids = ["A", "B", "C"]
+    keys = {n: generate_keypair() for n in node_ids}
+    sk_map = {n: sk for n, (sk, vk) in keys.items()}
+    vk_map = {n: vk for n, (sk, vk) in keys.items()}
+
     election = VRFLeaderElection()
     candidates = []
     expected_leader = None
     min_y = None
-    for n in ["A", "B", "C"]:
+    for n in node_ids:
         y, proof = election.evaluate(sk_map[n], seed)
         candidates.append(VRFMessage(n, 1, y, proof))
         if min_y is None or y < min_y:
             min_y = y
             expected_leader = n
     leader = election.elect(candidates, seed, vk_map)
-    assert leader == expected_leader, f"Expected {expected_leader}, got {leader}"
+    assert leader == expected_leader
 
 
 def test_elect_rejects_invalid_proof():
-    seed = b"seed_1"
-    sk_map = {"A": b"sk_A", "B": b"sk_B", "C": b"sk_C"}
-    vk_map = sk_map
-    candidates = [
-        VRFMessage("A", 1, sha256(b"sk_A" + seed).digest(), b"bad_proof"),
-    ]
-    for n in ["B", "C"]:
-        candidates.append(make_vrf(n, seed, sk_map))
+    seed = b"round_seed_1"
+    keys = {"A": generate_keypair(), "B": generate_keypair(), "C": generate_keypair()}
+    sk_map = {n: sk for n, (sk, vk) in keys.items()}
+    vk_map = {n: vk for n, (sk, vk) in keys.items()}
+
     election = VRFLeaderElection()
+    bad_y, bad_proof = election.evaluate(sk_map["A"], seed)
+    bad_proof = b"tampered"
+    candidates = [
+        VRFMessage("A", 1, bad_y, bad_proof),
+        make_vrf("B", seed, sk_map["B"]),
+        make_vrf("C", seed, sk_map["C"]),
+    ]
     leader = election.elect(candidates, seed, vk_map)
     assert leader in ("B", "C"), "A with bad proof must not be elected"
 
@@ -49,9 +55,40 @@ def test_elect_empty_raises():
         election.elect([], b"seed", {})
 
 
-def test_evaluate_and_verify():
+def test_evaluate_and_verify_roundtrip():
     election = VRFLeaderElection()
-    sk = b"my_secret"
+    sk, vk = generate_keypair()
     seed = b"round_42"
     y, proof = election.evaluate(sk, seed)
-    assert election.verify(sk, seed, y, proof) is True
+    assert election.verify(vk, seed, y, proof) is True
+
+
+def test_verify_rejects_wrong_vk():
+    election = VRFLeaderElection()
+    sk1, vk1 = generate_keypair()
+    _, vk2 = generate_keypair()
+    seed = b"round_42"
+    y, proof = election.evaluate(sk1, seed)
+    assert election.verify(vk2, seed, y, proof) is False
+
+
+def test_evaluate_deterministic():
+    election = VRFLeaderElection()
+    sk, _ = generate_keypair()
+    seed = b"round_42"
+    y1, proof1 = election.evaluate(sk, seed)
+    y2, proof2 = election.evaluate(sk, seed)
+    assert y1 == y2
+    assert proof1 == proof2
+
+
+def test_vrf_verify_against_elect():
+    seed = b"round_seed_1"
+    keys = {"A": generate_keypair(), "B": generate_keypair()}
+    sk_map = {n: sk for n, (sk, vk) in keys.items()}
+    vk_map = {n: vk for n, (sk, vk) in keys.items()}
+
+    election = VRFLeaderElection()
+    candidates = [make_vrf(n, seed, sk_map[n]) for n in ["A", "B"]]
+    leader = election.elect(candidates, seed, vk_map)
+    assert leader in ("A", "B")

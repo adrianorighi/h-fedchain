@@ -1,19 +1,30 @@
 from hashlib import sha256
 from hfc_types.messages import VRFMessage
+from core.pki.ed25519 import sign, verify as ed25519_verify
+
+
+def _derive_vk(sk: bytes) -> bytes:
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+    from cryptography.hazmat.primitives import serialization
+    private_key = ed25519.Ed25519PrivateKey.from_private_bytes(sk)
+    return private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
 
 
 class VRFLeaderElection:
     def evaluate(self, sk: bytes, seed: bytes) -> tuple[bytes, bytes]:
-        y = sha256(sk + seed).digest()
-        proof = sha256(b"vrf_proof:" + sk + seed).digest()
+        vk = _derive_vk(sk)
+        y = sha256(vk + seed).digest()
+        proof = sign(sk, y + seed)
         return y, proof
 
-    def verify(
-        self, vk: bytes, seed: bytes, y: bytes, proof: bytes
-    ) -> bool:
+    def verify(self, vk: bytes, seed: bytes, y: bytes, proof: bytes) -> bool:
         expected_y = sha256(vk + seed).digest()
-        expected_proof = sha256(b"vrf_proof:" + vk + seed).digest()
-        return y == expected_y and proof == expected_proof
+        if y != expected_y:
+            return False
+        return ed25519_verify(vk, y + seed, proof)
 
     def elect(
         self,
