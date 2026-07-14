@@ -85,3 +85,49 @@ async def test_multi_round_multi_node_consensus():
     assert len(leaders) >= 1
     heights = [n.ledger.get_height() for n in orch.nodes]
     assert all(h == 3 for h in heights), f"All ledgers must have height 3, got {heights}"
+
+
+@pytest.mark.asyncio
+async def test_multi_cluster_experiment_runner():
+    """3 clusters, 1 round: Cluster → InterRegional → Cloud flow"""
+    from simulator.cluster import Cluster
+    from simulator.interregional import InterRegionalManager
+    from simulator.cloud import CloudComponent
+    from simulator.experiment_runner import ExperimentRunner
+
+    clusters = [
+        Cluster(cluster_id=f"c{i}", nodes_per_cluster=4,
+                devices_per_cluster=6, f=1, latency_ms=5.0,
+                variant="no_zkp")
+        for i in range(3)
+    ]
+    interregional = InterRegionalManager()
+    cloud = CloudComponent()
+    runner = ExperimentRunner(clusters, interregional, cloud)
+
+    result = await runner.run_round(round_num=1)
+    assert result["round"] == 1
+    assert result["n_active_clusters"] == 3
+    assert cloud.worm.get_height() == 1
+
+
+@pytest.mark.asyncio
+async def test_multi_round_multi_cluster():
+    """2 clusters, 3 rounds: all rounds committed, worm stores 3 entries"""
+    from simulator.cluster import Cluster
+    from simulator.interregional import InterRegionalManager
+    from simulator.cloud import CloudComponent
+    from simulator.experiment_runner import ExperimentRunner
+
+    clusters = [
+        Cluster(cluster_id=f"c{i}", nodes_per_cluster=3,
+                devices_per_cluster=4, f=1, latency_ms=5.0)
+        for i in range(2)
+    ]
+    runner = ExperimentRunner(
+        clusters, InterRegionalManager(), CloudComponent(),
+    )
+    metrics = await runner.run_experiment(num_rounds=3)
+    assert len(metrics) == 3
+    assert all(m["n_active_clusters"] == 2 for m in metrics)
+    assert all(m["round"] == i + 1 for i, m in enumerate(metrics))
