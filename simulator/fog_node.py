@@ -1,6 +1,6 @@
 import numpy as np
 from typing import Optional
-from hfc_types.messages import Gradient, VRFMessage, AggregateGradient, MessageType
+from hfc_types.messages import Gradient, GradientWithProof, VRFMessage, AggregateGradient, MessageType
 from hfc_types.block import Block, QuorumCertificate
 from core.hotstuff.engine import HotStuffEngine
 from core.hotstuff.quorum import QuorumCertifier
@@ -45,12 +45,13 @@ class FogNode:
 
     async def process_round(
         self,
-        gradients: list[Gradient],
+        gradients: list[GradientWithProof],
         seed: bytes,
         round_num: int,
     ) -> Optional[AggregateGradient]:
         valid_grads: list[Gradient] = []
-        for g in gradients:
+        for gwp in gradients:
+            g = gwp.gradient
             if g.node_id.startswith("adv_"):
                 continue
             valid_grads.append(g)

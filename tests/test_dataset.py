@@ -4,7 +4,7 @@ from dataset.edge_worker import EdgeWorker
 from dataset.loader import PTBXLLoader
 from dataset.model import MLP
 from dataset.partitioner import DirichletPartitioner
-from hfc_types.messages import Gradient
+from hfc_types.messages import Gradient, GradientWithProof
 
 
 class TestPTBXLLoader:
@@ -135,19 +135,19 @@ class TestEdgeWorker:
         labels = np.random.randint(0, 5, size=10)
         worker = EdgeWorker("d0", list(range(10)), data, labels)
         weights = worker.model.get_weights()
-        grad = worker.train_round(weights, round_num=1)
-        assert isinstance(grad, Gradient)
-        assert grad.node_id == "d0"
-        assert len(grad.data) > 0
+        result = worker.train_round(weights, round_num=1)
+        assert isinstance(result, GradientWithProof)
+        assert result.gradient.node_id == "d0"
+        assert len(result.gradient.data) > 0
 
     def test_honest_worker_gradient_shape(self):
         data = np.random.randn(5, 12, 1000).astype(np.float32)
         labels = np.random.randint(0, 5, size=5)
         worker = EdgeWorker("d0", list(range(5)), data, labels, is_adversarial=False)
         weights = worker.model.get_weights()
-        grad = worker.train_round(weights)
+        result = worker.train_round(weights)
         expected_len = 12*1000*64 + 64 + 64*5 + 5  # 768000 + 64 + 320 + 5 = 768389
-        assert len(grad.data) == expected_len
+        assert len(result.gradient.data) == expected_len
 
     def test_adversarial_label_flip_modifies_gradient(self):
         data = np.random.randn(20, 12, 1000).astype(np.float32)
@@ -155,8 +155,8 @@ class TestEdgeWorker:
         honest = EdgeWorker("h", list(range(20)), data, labels, is_adversarial=False)
         adv = EdgeWorker("a", list(range(20)), data, labels, is_adversarial=True, attack_type="label_flip")
         w = honest.model.get_weights()
-        g_honest = np.array(honest.train_round(w, round_num=5).data)
-        g_adv = np.array(adv.train_round(w, round_num=5).data)
+        g_honest = np.array(honest.train_round(w, round_num=5).gradient.data)
+        g_adv = np.array(adv.train_round(w, round_num=5).gradient.data)
         # At round 5+ with label_flip, gradients should differ
         assert not np.allclose(g_honest, g_adv), "Adversarial gradient should differ"
 
@@ -165,8 +165,33 @@ class TestEdgeWorker:
         labels = np.random.randint(0, 5, size=15)
         worker = EdgeWorker("a", list(range(15)), data, labels, is_adversarial=True, attack_type="sign_flip")
         w = worker.model.get_weights()
-        grad = np.array(worker.train_round(w, round_num=0).data)
+        grad = np.array(worker.train_round(w, round_num=0).gradient.data)
         # The honest gradient would have been positive for some params;
         # sign-flip should make it negative. We check the raw gradient direction.
         flat_w = np.concatenate([v.ravel() for v in w.values()])
         assert len(grad) == len(flat_w), "Gradient length mismatch"
+
+
+def test_edge_worker_generates_snark():
+    import hashlib
+    import numpy as np
+    from dataset.edge_worker import EdgeWorker
+    from zkp.snark import SnarkVerifier
+
+    worker = EdgeWorker(
+        device_id="test_dev",
+        indices=[0, 1],
+        all_data=np.zeros((10, 12, 1000), dtype=np.float64),
+        all_labels=np.zeros(10, dtype=np.int64),
+        use_snark=True,
+    )
+    global_weights = worker.model.get_weights()
+    result = worker.train_round(global_weights, round_num=0)
+    grad, proof = result.gradient, result.snark_proof
+    assert grad is not None
+    assert proof is not None, "SNARK proof should be generated when use_snark=True"
+    model_hash = hashlib.sha256(str(sorted(global_weights.items())).encode()).digest()
+    verifier = SnarkVerifier()
+    import asyncio
+    valid = asyncio.run(verifier.verify(proof, model_hash, worker.sk))
+    assert valid, "SNARK proof should verify correctly"

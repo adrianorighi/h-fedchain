@@ -3,7 +3,7 @@ import time
 import numpy as np
 from hashlib import sha256
 from typing import Optional
-from hfc_types.messages import Gradient, VRFMessage, AggregateGradient, MessageType
+from hfc_types.messages import Gradient, GradientWithProof, VRFMessage, AggregateGradient, MessageType
 from hfc_types.block import Block, QuorumCertificate
 from simulator.network import EmulatedNetwork
 from simulator.fog_node import FogNode
@@ -104,11 +104,11 @@ class Orchestrator:
 
     def _generate_gradients(
         self, round_num: int
-    ) -> list[Gradient]:
+    ) -> list[GradientWithProof]:
         if self.use_dataset:
             return self._generate_real_gradients(round_num)
 
-        grads: list[Gradient] = []
+        grads: list[GradientWithProof] = []
         for d in range(self.devices_per_cluster * self.num_clusters):
             is_adv = (
                 self.adversarial_ratio > 0.0
@@ -120,12 +120,12 @@ class Orchestrator:
                 else [100.0 * float(np.random.randn()) for _ in range(10)]
             )
             gid = f"adv_{d}" if is_adv else f"d{d}"
-            grads.append(Gradient(
-                node_id=gid, round=round_num, data=data
+            grads.append(GradientWithProof(
+                gradient=Gradient(node_id=gid, round=round_num, data=data),
             ))
         return grads
 
-    def _generate_real_gradients(self, round_num: int) -> list[Gradient]:
+    def _generate_real_gradients(self, round_num: int) -> list[GradientWithProof]:
         grads = []
         for worker in self.edge_workers:
             grad = worker.train_round(
@@ -180,8 +180,8 @@ class Orchestrator:
             gradient_hash=seed,
             qc_commit=qc,
             stark_proof=None,
-            accepted_devices=[g.node_id for g in grads if not g.node_id.startswith("adv_")],
-            rejected_devices=[g.node_id for g in grads if g.node_id.startswith("adv_")],
+            accepted_devices=[g.gradient.node_id for g in grads if not g.gradient.node_id.startswith("adv_")],
+            rejected_devices=[g.gradient.node_id for g in grads if g.gradient.node_id.startswith("adv_")],
             timestamp=t_start,
             prev_hash=prev_hash,
         )
