@@ -9,6 +9,24 @@ if TYPE_CHECKING:
 
 
 @dataclass
+class RegionalOutput:
+    delta_w: bytes
+    stark_proof: Optional["StarkProof"]
+    qc_commit: Optional["QuorumCertificate"]
+    n_devices: int
+    round_num: int
+    cluster_id: str
+
+
+@dataclass
+class GlobalOutput:
+    delta_w_inter: bytes
+    pi_inter: Optional["StarkProof"]
+    n_active_clusters: int
+    round_num: int
+
+
+@dataclass
 class QuorumCertificate:
     round: int
     block_hash: bytes
