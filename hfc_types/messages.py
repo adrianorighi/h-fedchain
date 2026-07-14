@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Optional
 
+from hfc_types.crypto import SnarkProof
+
 
 class MessageType(Enum):
     PREPARE = auto()
@@ -19,6 +21,12 @@ class Gradient:
     round: int
     data: list[float]
     signature: Optional[bytes] = None
+
+
+@dataclass
+class GradientWithProof:
+    gradient: Gradient
+    snark_proof: Optional[SnarkProof] = None
 
 
 @dataclass
@@ -53,3 +61,6 @@ class AggregateGradient:
     gradient: Gradient
     accepted_devices: list[str]
     rejected_devices: list[str]
+    total_adversarial: int = 0
+    rejected_adversarial: int = 0
+    rejected_honest: int = 0
