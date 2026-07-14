@@ -1,12 +1,12 @@
 from hashlib import sha256
+from cryptography.hazmat.primitives.asymmetric import ed25519 as ed25519_key
+from cryptography.hazmat.primitives import serialization
 from hfc_types.messages import VRFMessage
 from core.pki.ed25519 import sign, verify as ed25519_verify
 
 
 def _derive_vk(sk: bytes) -> bytes:
-    from cryptography.hazmat.primitives.asymmetric import ed25519
-    from cryptography.hazmat.primitives import serialization
-    private_key = ed25519.Ed25519PrivateKey.from_private_bytes(sk)
+    private_key = ed25519_key.Ed25519PrivateKey.from_private_bytes(sk)
     return private_key.public_key().public_bytes(
         encoding=serialization.Encoding.Raw,
         format=serialization.PublicFormat.Raw,

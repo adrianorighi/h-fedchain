@@ -4,3 +4,5 @@ __pycache__/
 .venv/
 results/
 *.egg-info/
+specs/*
+plans/*

@@ -1,3 +1,4 @@
+from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from cryptography.hazmat.primitives import serialization
 
@@ -26,5 +27,5 @@ def verify(vk: bytes, message: bytes, signature: bytes) -> bool:
         public_key = ed25519.Ed25519PublicKey.from_public_bytes(vk)
         public_key.verify(signature, message)
         return True
-    except Exception:
+    except InvalidSignature:
         return False
