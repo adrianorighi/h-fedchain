@@ -7,6 +7,7 @@ from hfc_types.messages import Gradient, VRFMessage, AggregateGradient, MessageT
 from hfc_types.block import Block, QuorumCertificate
 from simulator.network import EmulatedNetwork
 from simulator.fog_node import FogNode
+from core.pki import generate_keypair
 from dataset.loader import PTBXLLoader
 from dataset.partitioner import DirichletPartitioner
 from dataset.edge_worker import EdgeWorker
@@ -48,7 +49,7 @@ class Orchestrator:
     def setup(self):
         for i in range(self.nodes_per_cluster):
             nid = f"n{i}"
-            sk = vk = nid.encode()
+            sk, vk = generate_keypair()
             peers = [f"n{j}" for j in range(self.nodes_per_cluster)]
             self.network.add_node(nid)
             node = FogNode(
@@ -151,15 +152,15 @@ class Orchestrator:
         # VRF election
         vrf = self.nodes[0].vrf
         vk_map = {n.node_id: n.vk for n in self.nodes}
-        candidates = [
-            VRFMessage(
+        candidates = []
+        for n in self.nodes:
+            y, proof = vrf.evaluate(n.sk, seed)
+            candidates.append(VRFMessage(
                 node_id=n.node_id,
                 round=round_num,
-                y=sha256(n.sk + seed).digest(),
-                proof=sha256(b"vrf_proof:" + n.sk + seed).digest(),
-            )
-            for n in self.nodes
-        ]
+                y=y,
+                proof=proof,
+            ))
         leader_id = vrf.elect(candidates, seed, vk_map)
 
         # Build block
