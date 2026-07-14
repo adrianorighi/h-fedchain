@@ -143,6 +143,39 @@ class Orchestrator:
             grads.append(grad)
         return grads
 
+    def _elect_leader(self, seed: bytes) -> str:
+        vrf = self.nodes[0].vrf
+        vk_map = {n.node_id: n.vk for n in self.nodes}
+        candidates = []
+        for n in self.nodes:
+            y, proof = vrf.evaluate(n.sk, seed)
+            candidates.append(VRFMessage(
+                node_id=n.node_id,
+                round=n.hotstuff.round or 0,
+                y=y,
+                proof=proof,
+            ))
+        return vrf.elect(candidates, seed, vk_map)
+
+    def _build_metrics(self, round_num, leader_id, t_start, t_end, block, grads, cluster_results) -> dict:
+        total_adv = sum(r.total_adversarial for r in cluster_results)
+        total_rej_adv = sum(r.rejected_adversarial for r in cluster_results)
+        total_rej_honest = sum(r.rejected_honest for r in cluster_results)
+        return {
+            "round": round_num,
+            "leader": leader_id,
+            "latency": t_end - t_start,
+            "num_accepted": len(block.accepted_devices),
+            "num_rejected": len(block.rejected_devices),
+            "ledger_height": self.nodes[0].ledger.get_height(),
+            "qc_emitted": True,
+            "num_adversarial": total_adv,
+            "num_honest": (self.devices_per_cluster * self.num_clusters) - total_adv,
+            "rejected_adversarial": total_rej_adv,
+            "falsely_rejected": total_rej_honest,
+            "variant": self.variant,
+        }
+
     async def run_round(self, round_num: int) -> dict:
         t_start = time.time()
         seed = sha256(f"round_{round_num}".encode()).digest()
@@ -163,42 +196,34 @@ class Orchestrator:
         if not cluster_results:
             return {"round": round_num, "latency": 0, "qc_emitted": False}
 
-        # VRF election
-        vrf = self.nodes[0].vrf
-        vk_map = {n.node_id: n.vk for n in self.nodes}
-        candidates = []
-        for n in self.nodes:
-            y, proof = vrf.evaluate(n.sk, seed)
-            candidates.append(VRFMessage(
-                node_id=n.node_id,
-                round=round_num,
-                y=y,
-                proof=proof,
-            ))
-        leader_id = vrf.elect(candidates, seed, vk_map)
+        leader_id = self._elect_leader(seed)
 
-        # Build block
-        quorum_size = self.nodes[0].qc.quorum_size(self.nodes_per_cluster)
-        qc = QuorumCertificate(
-            round=round_num,
-            block_hash=seed,
-            signatures=[(n.node_id, b"sig") for n in self.nodes[:quorum_size]],
-            msg_type=MessageType.COMMIT,
-        )
         prev_hash = b"\x00" * 32
         if round_num > 0 and self.nodes[0].ledger.get_height() > 0:
             prev_hash = self.nodes[0].ledger._entries[-1].block.hash
 
-        block = Block(
-            round=round_num,
-            gradient_hash=seed,
-            qc_commit=qc,
-            stark_proof=None,
-            accepted_devices=[g.gradient.node_id for g in grads if not g.gradient.node_id.startswith("adv_")],
-            rejected_devices=[g.gradient.node_id for g in grads if g.gradient.node_id.startswith("adv_")],
-            timestamp=t_start,
-            prev_hash=prev_hash,
-        )
+        consensus_results = []
+        for node in self.nodes:
+            is_leader = node.node_id == leader_id
+            proposed_block = Block(
+                round=round_num,
+                gradient_hash=seed,
+                qc_commit=None,
+                stark_proof=None,
+                accepted_devices=[g.gradient.node_id for g in grads if not g.gradient.node_id.startswith("adv_")],
+                rejected_devices=[g.gradient.node_id for g in grads if g.gradient.node_id.startswith("adv_")],
+                timestamp=t_start,
+                prev_hash=prev_hash,
+            ) if is_leader else None
+
+            entry = await node.run_consensus(round_num, is_leader, proposed_block)
+            if entry:
+                consensus_results.append(entry)
+
+        if not consensus_results:
+            return {"round": round_num, "latency": 0, "qc_emitted": False}
+
+        block = consensus_results[0].block
 
         for node in self.nodes:
             node.ledger.append(block)
@@ -224,23 +249,7 @@ class Orchestrator:
             self._global_weights = new_w
 
         t_end = time.time()
-        total_adv = sum(r.total_adversarial for r in cluster_results)
-        total_rej_adv = sum(r.rejected_adversarial for r in cluster_results)
-        total_rej_honest = sum(r.rejected_honest for r in cluster_results)
-        return {
-            "round": round_num,
-            "leader": leader_id,
-            "latency": t_end - t_start,
-            "num_accepted": len(block.accepted_devices),
-            "num_rejected": len(block.rejected_devices),
-            "ledger_height": self.nodes[0].ledger.get_height(),
-            "qc_emitted": True,
-            "num_adversarial": total_adv,
-            "num_honest": (self.devices_per_cluster * self.num_clusters) - total_adv,
-            "rejected_adversarial": total_rej_adv,
-            "falsely_rejected": total_rej_honest,
-            "variant": self.variant,
-        }
+        return self._build_metrics(round_num, leader_id, t_start, t_end, block, grads, cluster_results)
 
     async def run_experiment(
         self, num_rounds: int, warmup: int = 10

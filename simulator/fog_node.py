@@ -1,7 +1,7 @@
 import numpy as np
 from typing import Optional
 from hfc_types.messages import Gradient, GradientWithProof, VRFMessage, AggregateGradient, MessageType
-from hfc_types.block import Block, QuorumCertificate
+from hfc_types.block import Block, QuorumCertificate, LedgerEntry
 from hfc_types.crypto import SnarkProof
 from core.hotstuff.engine import HotStuffEngine
 from core.hotstuff.quorum import QuorumCertifier
@@ -119,3 +119,44 @@ class FogNode:
             rejected_honest=rejected_honest,
         )
         return agg
+
+    async def run_consensus(
+        self,
+        round_num: int,
+        is_leader: bool,
+        proposed_block: Optional[Block] = None,
+    ) -> Optional[LedgerEntry]:
+        await self.hotstuff.start_round(round_num, is_leader)
+
+        if is_leader and proposed_block is not None:
+            proposal = await self.hotstuff.propose(proposed_block)
+            if proposal is None:
+                return None
+            quorum = self.qc.quorum_size(self.n)
+            votes = [(p, b"sim_sig") for p in self.peers[:quorum]]
+            qc_prepare = await self.hotstuff.collect_votes(
+                round_num, proposed_block.hash, "prepare", votes,
+                vk_map=None,
+            )
+            if qc_prepare is None:
+                return None
+            for _ in self.peers:
+                await self.hotstuff.on_pre_commit(qc_prepare)
+            qc_pre_commit = await self.hotstuff.collect_votes(
+                round_num, proposed_block.hash, "pre_commit", votes,
+                vk_map=None,
+            )
+            if qc_pre_commit is None:
+                return None
+            for _ in self.peers:
+                await self.hotstuff.on_commit(qc_pre_commit)
+            qc_commit = await self.hotstuff.collect_votes(
+                round_num, proposed_block.hash, "commit", votes,
+                vk_map=None,
+            )
+            if qc_commit is None:
+                return None
+            entry = await self.hotstuff.on_qc_commit(qc_commit)
+            return entry
+
+        return None
