@@ -1,8 +1,11 @@
 from dataclasses import dataclass, field
 from hashlib import sha256
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from .messages import MessageType
+
+if TYPE_CHECKING:
+    from .crypto import StarkProof
 
 
 @dataclass
@@ -32,7 +35,7 @@ class Block:
     round: int
     gradient_hash: bytes
     qc_commit: Optional["QuorumCertificate"]
-    stark_proof: Optional[bytes]
+    stark_proof: Optional["StarkProof"]
     accepted_devices: list[str]
     rejected_devices: list[str]
     timestamp: float

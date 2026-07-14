@@ -1,4 +1,5 @@
 import numpy as np
+from dataclasses import replace
 from typing import Optional
 from hfc_types.messages import Gradient, GradientWithProof, VRFMessage, AggregateGradient, MessageType
 from hfc_types.block import Block, QuorumCertificate, LedgerEntry
@@ -9,7 +10,7 @@ from core.hotstuff.view_change import ViewChangeHandler
 from core.multikrum.aggregator import MultiKrum
 from core.vrf.election import VRFLeaderElection
 from core.ledger.store import LedgerStore
-from zkp.stark import StarkProver
+from zkp.stark import StarkProver, StarkVerifier
 from zkp.snark import SnarkVerifier
 from simulator.network import EmulatedNetwork
 
@@ -39,6 +40,7 @@ class FogNode:
         self.qc = QuorumCertifier()
         self.view_change = ViewChangeHandler(n, f)
         self.stark_prover = StarkProver()
+        self.stark_verifier = StarkVerifier()
         self.snark_verifier = SnarkVerifier()
         self._vk_map: dict[str, bytes] = {p: b"" for p in peers}
         self._vk_map[node_id] = vk
@@ -49,6 +51,11 @@ class FogNode:
 
     def set_variant(self, variant: str):
         self._variant = variant
+
+    async def verify_block(self, block: Block) -> bool:
+        if self._variant in ("stark", "full") and block.stark_proof is not None:
+            return await self.stark_verifier.verify(block.stark_proof, block.stark_proof.public_inputs)
+        return True
 
     async def process_round(
         self,
@@ -157,6 +164,10 @@ class FogNode:
             if qc_commit is None:
                 return None
             entry = await self.hotstuff.on_qc_commit(qc_commit)
+            if entry is not None and self._variant in ("stark", "full"):
+                proof = await self.stark_prover.generate_proof(entry.block)
+                updated_block = replace(entry.block, stark_proof=proof)
+                entry = LedgerEntry(block=updated_block, node_id=entry.node_id, stored_at=entry.stored_at, verified=entry.verified)
             return entry
 
         return None
