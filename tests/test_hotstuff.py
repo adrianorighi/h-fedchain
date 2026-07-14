@@ -136,16 +136,41 @@ class TestViewChange:
         return ViewChangeHandler(n=5, f=1)
 
     def test_detect_leader_failure(self, view_change):
-        assert view_change.should_change_view(leader_id="n0", timeout=True) is True
+        assert view_change.should_change_view(timeout=True) is True
 
     def test_no_change_when_leader_ok(self, view_change):
-        assert view_change.should_change_view(leader_id="n0", timeout=False) is False
+        assert view_change.should_change_view(timeout=False) is False
 
-    def test_next_leader(self, view_change):
-        view_change.current_view = 1
-        assert view_change.next_leader() == "n0"
-        view_change.current_view = 2
-        assert view_change.next_leader() == "n1"
+    def test_next_leader_rotation(self, view_change):
+        node_ids = ["n0", "n1", "n2", "n3", "n4"]
+        leaders = []
+        for i in range(5):
+            leaders.append(view_change.next_leader(node_ids))
+        assert len(set(leaders)) == 5
+        assert leaders[0] == "n1"
+
+    def test_record_highest_qc(self, view_change):
+        view_change.record_highest_qc(round=5, qc=b"qc_data")
+        assert view_change._highest_qc == (5, b"qc_data")
+        view_change.record_highest_qc(round=3, qc=b"older")
+        assert view_change._highest_qc == (5, b"qc_data")
+
+    def test_create_view_change_message(self, view_change):
+        from core.pki import generate_keypair
+        sk, vk = generate_keypair()
+        view_change.record_highest_qc(round=1, qc=b"some_qc")
+        msg = view_change.create_view_change(node_id="n3", new_view=6, sk=sk)
+        assert msg.new_view == 6
+        assert msg.node_id == "n3"
+        assert msg.highest_qc == (1, b"some_qc")
+        assert len(msg.signature) > 0
+
+    def test_create_new_view_message(self, view_change):
+        qcs = [b"qc1", b"qc2"]
+        msg = view_change.create_new_view(leader_id="n1", new_view=6, qc_set=qcs)
+        assert msg.new_view == 6
+        assert len(msg.qc_set) == 2
+        assert msg.leader_id == "n1"
 
 
 from core.pki import generate_keypair, sign as pki_sign
