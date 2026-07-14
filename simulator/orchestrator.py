@@ -30,6 +30,7 @@ class Orchestrator:
         use_dataset: bool = False,
         dataset_max_records: int = 500,
         dirichlet_alpha: float = 0.5,
+        variant: str = "no_zkp",
     ):
         self.num_clusters = num_clusters
         self.nodes_per_cluster = nodes_per_cluster
@@ -40,6 +41,7 @@ class Orchestrator:
         self.use_dataset = use_dataset
         self.dataset_max_records = dataset_max_records
         self.dirichlet_alpha = dirichlet_alpha
+        self.variant = variant
         self.nodes: list[FogNode] = []
         self.network = EmulatedNetwork(latency_ms)
         self.result = ExperimentResult()
@@ -61,6 +63,7 @@ class Orchestrator:
                 f=self.f,
                 network=self.network,
             )
+            node.set_variant(self.variant)
             self.nodes.append(node)
         for node in self.nodes:
             for other in self.nodes:
@@ -85,6 +88,7 @@ class Orchestrator:
         )
 
         num_adv = int(num_devices * self.adversarial_ratio)
+        use_snark = self.variant in ("snark", "full")
         self.edge_workers = []
         for i, indices in enumerate(assignments):
             if not indices:
@@ -97,8 +101,12 @@ class Orchestrator:
                 all_labels=labels,
                 is_adversarial=is_adv,
                 attack_type="label_flip",
+                use_snark=use_snark,
             )
             self.edge_workers.append(worker)
+            if use_snark:
+                for node in self.nodes:
+                    node._set_vk(worker.device_id, worker.vk)
 
         self._global_weights = self.edge_workers[0].model.get_weights()
 
@@ -140,9 +148,15 @@ class Orchestrator:
         seed = sha256(f"round_{round_num}".encode()).digest()
         grads = self._generate_gradients(round_num)
 
+        model_hash = None
+        if self.use_dataset and self._global_weights:
+            model_hash = sha256(
+                str(sorted(self._global_weights.items())).encode()
+            ).digest()
+
         cluster_results: list[AggregateGradient] = []
         for node in self.nodes:
-            result = await node.process_round(grads, seed, round_num)
+            result = await node.process_round(grads, seed, round_num, model_hash=model_hash)
             if result:
                 cluster_results.append(result)
 
@@ -210,6 +224,9 @@ class Orchestrator:
             self._global_weights = new_w
 
         t_end = time.time()
+        total_adv = sum(r.total_adversarial for r in cluster_results)
+        total_rej_adv = sum(r.rejected_adversarial for r in cluster_results)
+        total_rej_honest = sum(r.rejected_honest for r in cluster_results)
         return {
             "round": round_num,
             "leader": leader_id,
@@ -218,9 +235,11 @@ class Orchestrator:
             "num_rejected": len(block.rejected_devices),
             "ledger_height": self.nodes[0].ledger.get_height(),
             "qc_emitted": True,
-            "num_adversarial": int(self.devices_per_cluster * self.adversarial_ratio) if self.adversarial_ratio > 0 else 0,
-            "num_honest": self.devices_per_cluster - int(self.devices_per_cluster * self.adversarial_ratio),
-            "falsely_rejected": 0,
+            "num_adversarial": total_adv,
+            "num_honest": (self.devices_per_cluster * self.num_clusters) - total_adv,
+            "rejected_adversarial": total_rej_adv,
+            "falsely_rejected": total_rej_honest,
+            "variant": self.variant,
         }
 
     async def run_experiment(
