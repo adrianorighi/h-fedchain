@@ -42,16 +42,18 @@ def test_quorum_size_calculation(qc_certifier):
 
 
 from core.hotstuff.engine import HotStuffEngine
+from core.pki import generate_keypair
 from hfc_types.block import Block
 
 
 class TestHotStuffEngine:
     @pytest.fixture
     def engine(self):
+        sk, vk = generate_keypair()
         return HotStuffEngine(
             node_id="n0",
-            sk=b"sk_n0",
-            vk=b"vk_n0",
+            sk=sk,
+            vk=vk,
             peers=["n0", "n1", "n2", "n3", "n4"],
             n=5,
             f=1,
@@ -59,6 +61,7 @@ class TestHotStuffEngine:
 
     @pytest.mark.asyncio
     async def test_prepare_emits_vote(self, engine):
+        await engine.start_round(round_num=1, is_leader=False)
         proposal = Block(
             round=1,
             gradient_hash=b"gh",
@@ -71,11 +74,12 @@ class TestHotStuffEngine:
         )
         vote = await engine.on_prepare(proposal)
         assert vote is not None
-        assert vote.msg_type == MessageType.PREPARE
+        assert vote.phase == "prepare"
         assert vote.round == 1
 
     @pytest.mark.asyncio
     async def test_double_prepare_returns_none(self, engine):
+        await engine.start_round(round_num=1, is_leader=False)
         proposal = Block(
             round=1, gradient_hash=b"gh", qc_commit=None,
             stark_proof=None, accepted_devices=[], rejected_devices=[],
@@ -87,6 +91,7 @@ class TestHotStuffEngine:
 
     @pytest.mark.asyncio
     async def test_full_flow(self, engine):
+        await engine.start_round(round_num=1, is_leader=False)
         proposal = Block(
             round=1, gradient_hash=b"gh", qc_commit=None,
             stark_proof=None, accepted_devices=[], rejected_devices=[],
@@ -121,6 +126,7 @@ class TestHotStuffEngine:
         )
         entry = await engine.on_qc_commit(qc_commit)
         assert entry is not None
+        assert engine.state == "DECIDED"
 
 
 class TestViewChange:

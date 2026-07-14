@@ -1,6 +1,9 @@
 from typing import Optional
 from hfc_types.block import Block, QuorumCertificate, LedgerEntry
-from hfc_types.messages import Vote, MessageType
+from hfc_types.messages import MessageType
+from core.hotstuff.quorum import QuorumCertifier
+from core.hotstuff.messages import PrepareProposal, VoteMessage
+from core.pki import sign as pki_sign
 
 
 class HotStuffEngine:
@@ -19,40 +22,79 @@ class HotStuffEngine:
         self.peers = peers
         self.n = n
         self.f = f
-        self._round_voted: set[int] = set()
+        self.quorum_certifier = QuorumCertifier()
 
-    async def on_prepare(self, proposal: Block) -> Optional[Vote]:
-        if proposal.round in self._round_voted:
+        self.round = 0
+        self.current_view = 1
+        self.state = "IDLE"
+        self._voted_prepare: set[int] = set()
+        self._voted_pre_commit: set[int] = set()
+        self._voted_commit: set[int] = set()
+        self._last_proposal: Optional[Block] = None
+
+    async def start_round(self, round_num: int, is_leader: bool) -> None:
+        self.round = round_num
+        if is_leader:
+            self.state = "READY_TO_PROPOSE"
+        else:
+            self.state = "READY_TO_VOTE"
+
+    async def propose(self, block: Block) -> Optional[PrepareProposal]:
+        if self.state != "READY_TO_PROPOSE":
             return None
-        self._round_voted.add(proposal.round)
-        return Vote(
+        self._last_proposal = block
+        self.state = "VOTED_PREPARE"
+        return PrepareProposal(
+            leader_id=self.node_id,
+            round=self.round,
+            block=block,
+        )
+
+    async def on_prepare(self, proposal: Block) -> Optional[VoteMessage]:
+        if proposal.round in self._voted_prepare:
+            return None
+        self._voted_prepare.add(proposal.round)
+        self._last_proposal = proposal
+        msg = str(self.round).encode() + b"prepare" + proposal.hash
+        sig = pki_sign(self.sk, msg)
+        return VoteMessage(
             node_id=self.node_id,
             round=proposal.round,
-            msg_type=MessageType.PREPARE,
+            phase="prepare",
             block_hash=proposal.hash,
+            signature=sig,
         )
 
-    async def on_pre_commit(
-        self, qc: QuorumCertificate
-    ) -> Optional[Vote]:
-        return Vote(
+    async def on_pre_commit(self, qc: QuorumCertificate) -> Optional[VoteMessage]:
+        if qc.round in self._voted_pre_commit:
+            return None
+        self._voted_pre_commit.add(qc.round)
+        msg = str(self.round).encode() + b"pre_commit" + qc.block_hash
+        sig = pki_sign(self.sk, msg)
+        return VoteMessage(
             node_id=self.node_id,
             round=qc.round,
-            msg_type=MessageType.PRE_COMMIT,
+            phase="pre_commit",
             block_hash=qc.block_hash,
+            signature=sig,
         )
 
-    async def on_commit(self, qc: QuorumCertificate) -> Optional[Vote]:
-        return Vote(
+    async def on_commit(self, qc: QuorumCertificate) -> Optional[VoteMessage]:
+        if qc.round in self._voted_commit:
+            return None
+        self._voted_commit.add(qc.round)
+        msg = str(self.round).encode() + b"commit" + qc.block_hash
+        sig = pki_sign(self.sk, msg)
+        return VoteMessage(
             node_id=self.node_id,
             round=qc.round,
-            msg_type=MessageType.COMMIT,
+            phase="commit",
             block_hash=qc.block_hash,
+            signature=sig,
         )
 
-    async def on_qc_commit(
-        self, qc: QuorumCertificate
-    ) -> Optional[LedgerEntry]:
+    async def on_qc_commit(self, qc: QuorumCertificate) -> Optional[LedgerEntry]:
+        self.state = "DECIDED"
         return LedgerEntry(
             block=Block(
                 round=qc.round,
@@ -67,3 +109,37 @@ class HotStuffEngine:
             node_id=self.node_id,
             stored_at=0.0,
         )
+
+    async def collect_votes(
+        self,
+        round: int,
+        block_hash: bytes,
+        phase: str,
+        votes: list[tuple[str, bytes]],
+        vk_map: Optional[dict[str, bytes]] = None,
+    ) -> Optional[QuorumCertificate]:
+        phase_map = {
+            "prepare": MessageType.PREPARE,
+            "pre_commit": MessageType.PRE_COMMIT,
+            "commit": MessageType.COMMIT,
+        }
+        msg_type = phase_map.get(phase)
+        if msg_type is None:
+            return None
+        quorum = self.quorum_certifier.quorum_size(self.n)
+        if len(votes) < quorum:
+            return None
+        try:
+            return self.quorum_certifier.collect(
+                round=round,
+                block_hash=block_hash,
+                msg_type=msg_type,
+                signatures=votes,
+                quorum_size=quorum,
+                vk_map=vk_map,
+            )
+        except ValueError:
+            return None
+
+    async def handle_timeout(self) -> bool:
+        return True
