@@ -1,3 +1,4 @@
+from dataclasses import replace
 from typing import Optional
 from hfc_types.block import Block, QuorumCertificate, LedgerEntry
 from hfc_types.messages import MessageType
@@ -95,8 +96,10 @@ class HotStuffEngine:
 
     async def on_qc_commit(self, qc: QuorumCertificate) -> Optional[LedgerEntry]:
         self.state = "DECIDED"
-        return LedgerEntry(
-            block=Block(
+        if self._last_proposal is not None:
+            block = replace(self._last_proposal, qc_commit=qc)
+        else:
+            block = Block(
                 round=qc.round,
                 gradient_hash=qc.block_hash,
                 qc_commit=qc,
@@ -105,7 +108,9 @@ class HotStuffEngine:
                 rejected_devices=[],
                 timestamp=0.0,
                 prev_hash=b"\x00" * 32,
-            ),
+            )
+        return LedgerEntry(
+            block=block,
             node_id=self.node_id,
             stored_at=0.0,
         )
