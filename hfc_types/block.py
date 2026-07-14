@@ -12,8 +12,19 @@ class QuorumCertificate:
     signatures: list[tuple[str, bytes]]
     msg_type: MessageType
 
-    def is_valid(self, quorum_size: int) -> bool:
-        return len(self.signatures) >= quorum_size
+    def is_valid(self, quorum_size: int, vk_map: dict[str, bytes] | None = None) -> bool:
+        if len(self.signatures) < quorum_size:
+            return False
+        if vk_map is not None:
+            from core.pki import verify as pki_verify
+            for node_id, sig in self.signatures[:quorum_size]:
+                vk = vk_map.get(node_id)
+                if vk is None:
+                    return False
+                msg = str(self.round).encode() + self.block_hash + self.msg_type.name.encode()
+                if not pki_verify(vk, msg, sig):
+                    return False
+        return True
 
 
 @dataclass(frozen=True)

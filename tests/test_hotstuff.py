@@ -140,3 +140,39 @@ class TestViewChange:
         assert view_change.next_leader() == "n0"
         view_change.current_view = 2
         assert view_change.next_leader() == "n1"
+
+
+from core.pki import generate_keypair, sign as pki_sign
+
+
+def test_collect_verifies_signatures(qc_certifier):
+    n, f = 5, 1
+    quorum = n - f
+    keys = {f"n{i}": generate_keypair() for i in range(n)}
+    vk_map = {nid: vk for nid, (sk, vk) in keys.items()}
+    msg = str(1).encode() + b"bh" + MessageType.PREPARE.name.encode()
+    sigs = [(nid, pki_sign(sk, msg)) for nid, (sk, vk) in keys.items()][:quorum]
+    qc = qc_certifier.collect(
+        round=1, block_hash=b"bh",
+        msg_type=MessageType.PREPARE,
+        signatures=sigs,
+        quorum_size=quorum,
+        vk_map=vk_map,
+    )
+    assert qc.is_valid(quorum, vk_map)
+
+
+def test_collect_rejects_bad_signature(qc_certifier):
+    n, f = 5, 1
+    quorum = n - f
+    keys = {f"n{i}": generate_keypair() for i in range(n)}
+    vk_map = {nid: vk for nid, (sk, vk) in keys.items()}
+    sigs = [(f"n{i}", b"bad_sig") for i in range(quorum)]
+    with pytest.raises(ValueError, match="Invalid signature"):
+        qc_certifier.collect(
+            round=1, block_hash=b"bh",
+            msg_type=MessageType.PREPARE,
+            signatures=sigs,
+            quorum_size=quorum,
+            vk_map=vk_map,
+        )
