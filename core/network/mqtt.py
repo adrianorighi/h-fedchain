@@ -9,7 +9,7 @@ class MqttClient:
         self.client_id = client_id
         self.broker_host = broker_host
         self.broker_port = broker_port
-        self._client = mqtt.Client(client_id=client_id)
+        self._client = mqtt.Client(client_id=client_id, callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
         self._handlers: dict[str, list[Callable]] = {}
         self._connected = asyncio.Event()
 

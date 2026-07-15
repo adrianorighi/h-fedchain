@@ -20,6 +20,7 @@ from hfc_types.block import Block, LedgerEntry
 from hfc_types.messages import (
     AggregateGradient,
     GradientWithProof,
+    MessageType,
     VRFMessage,
 )
 from zkp.snark import SnarkVerifier
@@ -33,8 +34,9 @@ class FogConsensusServicer:
         self.fog = fog_service
 
     async def ConsensusStream(self, request_iterator, context):
+        peer_id = context.peer()
         async for msg in request_iterator:
-            pass
+            await self.fog._on_consensus_message(msg, peer_id)
 
 
 class FogService:
@@ -70,8 +72,10 @@ class FogService:
         self.stark_prover = StarkProver()
 
         self.mqtt = MqttClient(f"fog_{node_id}", mqtt_broker, mqtt_port)
+        self._mqtt_enabled = True
         self._grpc_server = None
-        self._peer_stubs: dict[str, any] = {}
+        self._peer_queues: dict[str, asyncio.Queue] = {}
+        self._peer_channels: dict[str, any] = {}
 
         self._pending_gradients: list[GradientWithProof] = []
         self._vk_map: dict[str, bytes] = {}
@@ -79,15 +83,23 @@ class FogService:
         self._last_aggregate: Optional[AggregateGradient] = None
         self._running = False
 
+        # Consensus state
+        self._pending_votes: list = []
+        self._vote_event: asyncio.Event = asyncio.Event()
+
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
 
     async def start(self):
-        await self.mqtt.start()
-        self.mqtt.subscribe(
-            f"gradients/{self.node_id}", self._on_mqtt_gradient
-        )
+        if self._mqtt_enabled:
+            try:
+                await self.mqtt.start()
+                self.mqtt.subscribe(
+                    f"gradients/{self.node_id}", self._on_mqtt_gradient
+                )
+            except Exception:
+                pass
         await self._connect_peers()
         asyncio.create_task(self._serve_grpc())
         self._running = True
@@ -123,7 +135,7 @@ class FogService:
             await self._run_round()
 
     # ------------------------------------------------------------------
-    # Peer gRPC connections
+    # Peer gRPC connections (bidirectional streaming)
     # ------------------------------------------------------------------
 
     async def _connect_peers(self):
@@ -131,13 +143,94 @@ class FogService:
         from proto import hfedchain_pb2_grpc
 
         for peer_id in self.peers:
+            queue: asyncio.Queue = asyncio.Queue()
+            self._peer_queues[peer_id] = queue
             addr = f"{peer_id}:{self.grpc_port}"
+
+            async def request_generator(q=queue, p=peer_id):
+                while self._running:
+                    try:
+                        msg = await asyncio.wait_for(q.get(), timeout=1.0)
+                        yield msg
+                    except asyncio.TimeoutError:
+                        continue
+
+            asyncio.create_task(self._connect_one_peer(peer_id, addr, request_generator))
+
+    async def _connect_one_peer(self, peer_id, addr, req_gen):
+        import grpc
+        from proto import hfedchain_pb2_grpc
+
+        for attempt in range(30):
             try:
                 channel = grpc.aio.insecure_channel(addr)
                 stub = hfedchain_pb2_grpc.FogConsensusStub(channel)
-                self._peer_stubs[peer_id] = stub
+                self._peer_channels[peer_id] = channel
+                stream = stub.ConsensusStream(req_gen())
+                await self._read_stream(stream, peer_id)
+                return
             except Exception:
-                pass
+                await asyncio.sleep(0.5)
+
+    async def _read_stream(self, stream, peer_id: str):
+        async for response in stream:
+            await self._on_consensus_message(response, peer_id)
+
+    async def _send_to(self, peer_id: str, msg):
+        queue = self._peer_queues.get(peer_id)
+        if queue is not None:
+            await queue.put(msg)
+
+    async def _broadcast(self, msg, exclude: Optional[list[str]] = None):
+        targets = [p for p in self.peers if not exclude or p not in exclude]
+        for peer_id in targets:
+            await self._send_to(peer_id, msg)
+
+    async def _on_consensus_message(self, msg, sender_id: str):
+        which = msg.WhichOneof("msg")
+        if which == "prepare":
+            block = pickle.loads(msg.prepare.block_data)
+            vote = await self.engine.on_prepare(block)
+            if vote is not None:
+                from proto import hfedchain_pb2
+                vote_msg = hfedchain_pb2.ConsensusMessage(
+                    vote=hfedchain_pb2.VoteMessage(
+                        node_id=self.node_id,
+                        round=vote.round,
+                        phase=vote.phase,
+                        block_hash=vote.block_hash,
+                        signature=vote.signature,
+                    )
+                )
+                leader_id = msg.prepare.leader_id
+                await self._send_to(leader_id, vote_msg)
+
+        elif which == "vote":
+            self._pending_votes.append(msg.vote)
+            self._vote_event.set()
+
+        elif which == "qc":
+            qc = pickle.loads(msg.qc.quorum_certificate)
+            phase = msg.qc.phase
+            if phase == "pre_commit":
+                vote = await self.engine.on_pre_commit(qc)
+            elif phase == "commit":
+                vote = await self.engine.on_commit(qc)
+            else:
+                return
+            if vote is not None:
+                from proto import hfedchain_pb2
+                vote_msg = hfedchain_pb2.ConsensusMessage(
+                    vote=hfedchain_pb2.VoteMessage(
+                        node_id=self.node_id,
+                        round=vote.round,
+                        phase=vote.phase,
+                        block_hash=vote.block_hash,
+                        signature=vote.signature,
+                    )
+                )
+                leader_id = msg.qc.leader_id
+                await self._send_to(leader_id, vote_msg)
 
     async def _serve_grpc(self):
         import grpc
@@ -158,7 +251,6 @@ class FogService:
     async def _run_round(self):
         round_num = self.engine.round + 1
 
-        # Step 1: SNARK verify
         valid_grads = []
         for item in self._pending_gradients:
             if (
@@ -178,7 +270,6 @@ class FogService:
         if len(valid_grads) < self.n - self.f:
             return
 
-        # Step 2: MultiKrum
         np_grads = [np.array(g.data) for g in valid_grads]
         selected = self.multikrum.select(np_grads, self.f)
         agg = AggregateGradient(
@@ -193,101 +284,151 @@ class FogService:
         )
         self._last_aggregate = agg
 
-        # Step 3: VRF elect leader
         seed = hashlib.sha256(f"round_{round_num}".encode()).digest()
         y, proof = self.vrf.evaluate(self.engine.sk, seed)
         candidates = [VRFMessage(self.node_id, round_num, y, proof)]
-        leader_idx = round_num % len([self.node_id] + self.peers)
+        all_nodes = [self.node_id] + self.peers
+        leader_idx = round_num % len(all_nodes)
         is_leader = leader_idx == 0
-        self._current_leader = (
-            self.node_id
-            if is_leader
-            else [self.node_id] + self.peers[leader_idx]
-        )
+        self._current_leader = all_nodes[leader_idx]
 
-        # Step 4: HotStuff consensus
         if is_leader:
-            block = Block(
-                round=round_num,
-                gradient_hash=seed,
-                qc_commit=None,
-                stark_proof=None,
-                accepted_devices=[g.node_id for g in valid_grads],
-                rejected_devices=[],
-                timestamp=time.time(),
-                prev_hash=b"\x00" * 32,
-            )
-            if self.ledger.get_height() > 0:
-                block = replace(
-                    block, prev_hash=self.ledger._entries[-1].block.hash
-                )
-
-            await self.engine.start_round(round_num, is_leader=True)
-            proposal = await self.engine.propose(block)
-            if proposal is not None:
-                for peer_id in self.peers:
-                    stub = self._peer_stubs.get(peer_id)
-                    if stub:
-                        self._send_prepare(stub, peer_id, round_num, block)
-
-                quorum = self.quorum_certifier.quorum_size(self.n)
-                votes = [(p, b"sim_sig") for p in self.peers[:quorum]]
-                qc_prepare = await self.engine.collect_votes(
-                    round_num,
-                    block.hash,
-                    "prepare",
-                    votes,
-                    vk_map=self._vk_map,
-                )
-                if qc_prepare:
-                    for _ in self.peers:
-                        await self.engine.on_pre_commit(qc_prepare)
-                    qc_pre_commit = await self.engine.collect_votes(
-                        round_num, block.hash, "pre_commit", votes
-                    )
-                    if qc_pre_commit:
-                        for _ in self.peers:
-                            await self.engine.on_commit(qc_pre_commit)
-                        qc_commit = await self.engine.collect_votes(
-                            round_num, block.hash, "commit", votes
-                        )
-                        if qc_commit:
-                            entry = await self.engine.on_qc_commit(qc_commit)
-                            if entry:
-                                if self.variant in ("stark", "full"):
-                                    proof = (
-                                        await self.stark_prover.generate_proof(
-                                            entry.block
-                                        )
-                                    )
-                                    entry = LedgerEntry(
-                                        block=replace(
-                                            entry.block,
-                                            stark_proof=proof,
-                                        ),
-                                        node_id=entry.node_id,
-                                        stored_at=entry.stored_at,
-                                    )
-                                self.ledger.append(entry.block)
-                                await self._send_to_cloud(entry.block)
+            await self._run_leader_consensus(round_num, seed, valid_grads)
         else:
             await self.engine.start_round(round_num, is_leader=False)
 
-    def _send_prepare(self, stub, peer_id, round_num, block):
-        try:
-            from proto import hfedchain_pb2
+    async def _run_leader_consensus(self, round_num, seed, valid_grads):
+        from proto import hfedchain_pb2
 
-            msg = hfedchain_pb2.ConsensusMessage(
-                prepare=hfedchain_pb2.PrepareProposal(
-                    leader_id=self.node_id,
-                    round=round_num,
-                    block_data=pickle.dumps(block),
-                    signature=bytes(0),
+        block = Block(
+            round=round_num,
+            gradient_hash=seed,
+            qc_commit=None,
+            stark_proof=None,
+            accepted_devices=[g.node_id for g in valid_grads],
+            rejected_devices=[],
+            timestamp=time.time(),
+            prev_hash=b"\x00" * 32,
+        )
+        if self.ledger.get_height() > 0:
+            block = replace(
+                block, prev_hash=self.ledger._entries[-1].block.hash
+            )
+
+        await self.engine.start_round(round_num, is_leader=True)
+        proposal = await self.engine.propose(block)
+        if proposal is None:
+            return
+
+        # Single-node: commit directly
+        if not self.peers:
+            entry = await self.engine.on_qc_commit(
+                self.quorum_certifier.collect(
+                    round=round_num, block_hash=block.hash,
+                    msg_type=MessageType.COMMIT,
+                    signatures=[(self.node_id, bytes(0))],
+                    quorum_size=1,
                 )
             )
-            stub.ConsensusStream(msg)
-        except Exception:
-            pass
+            if entry:
+                self.ledger.append(entry.block)
+            return
+
+        prepare_msg = hfedchain_pb2.ConsensusMessage(
+            prepare=hfedchain_pb2.PrepareProposal(
+                leader_id=self.node_id,
+                round=round_num,
+                block_data=pickle.dumps(block),
+                signature=bytes(0),
+            )
+        )
+        await self._broadcast(prepare_msg)
+
+        quorum = self.quorum_certifier.quorum_size(self.n)
+
+        qc_prepare = await self._collect_quorum_votes(round_num, block.hash, "prepare", quorum)
+        if qc_prepare is None:
+            return
+
+        qc_msg = hfedchain_pb2.ConsensusMessage(
+            qc=hfedchain_pb2.QcBroadcast(
+                leader_id=self.node_id,
+                round=round_num,
+                phase="pre_commit",
+                quorum_certificate=pickle.dumps(qc_prepare),
+            )
+        )
+        await self._broadcast(qc_msg)
+
+        qc_pre_commit = await self._collect_quorum_votes(round_num, block.hash, "pre_commit", quorum)
+        if qc_pre_commit is None:
+            return
+
+        qc_msg = hfedchain_pb2.ConsensusMessage(
+            qc=hfedchain_pb2.QcBroadcast(
+                leader_id=self.node_id,
+                round=round_num,
+                phase="commit",
+                quorum_certificate=pickle.dumps(qc_pre_commit),
+            )
+        )
+        await self._broadcast(qc_msg)
+
+        qc_commit = await self._collect_quorum_votes(round_num, block.hash, "commit", quorum)
+        if qc_commit is None:
+            return
+
+        entry = await self.engine.on_qc_commit(qc_commit)
+        if entry is None:
+            return
+
+        if self.variant in ("stark", "full"):
+            proof = await self.stark_prover.generate_proof(entry.block)
+            entry = LedgerEntry(
+                block=replace(entry.block, stark_proof=proof),
+                node_id=entry.node_id,
+                stored_at=entry.stored_at,
+            )
+
+        self.ledger.append(entry.block)
+        await self._send_to_cloud(entry.block)
+
+    async def _collect_quorum_votes(self, round_num, block_hash, phase, quorum):
+        self._pending_votes = []
+        self._vote_event.clear()
+
+        deadline = time.time() + 5.0
+        while len(self._pending_votes) < quorum and time.time() < deadline:
+            try:
+                await asyncio.wait_for(self._vote_event.wait(), timeout=0.5)
+                self._vote_event.clear()
+            except asyncio.TimeoutError:
+                pass
+
+        if len(self._pending_votes) < quorum:
+            return None
+
+        phase_map = {
+            "prepare": MessageType.PREPARE,
+            "pre_commit": MessageType.PRE_COMMIT,
+            "commit": MessageType.COMMIT,
+        }
+        msg_type = phase_map.get(phase)
+        if msg_type is None:
+            return None
+
+        signatures = [(v.node_id, v.signature) for v in self._pending_votes[:quorum]]
+        try:
+            return self.quorum_certifier.collect(
+                round=round_num,
+                block_hash=block_hash,
+                msg_type=msg_type,
+                signatures=signatures,
+                quorum_size=quorum,
+                vk_map=self._vk_map,
+            )
+        except ValueError:
+            return None
 
     async def _send_to_cloud(self, block: Block):
         try:
