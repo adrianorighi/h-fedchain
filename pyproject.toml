@@ -13,6 +13,7 @@ dependencies = [
 [project.optional-dependencies]
 zkp = ["pysnark", "ethstark"]
 dev = ["pytest>=7.0", "pytest-asyncio>=0.21"]
+distributed = ["grpcio>=1.60", "grpcio-tools>=1.60", "protobuf>=4.25", "paho-mqtt>=1.6"]
 
 [tool.setuptools.packages.find]
 include = ["hfc_types*", "core*", "zkp*"]

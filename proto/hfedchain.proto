@@ -1,0 +1,119 @@
+syntax = "proto3";
+
+package hfedchain;
+
+// ============================================================
+// EDGE → FOG (via MQTT serialized as protobuf)
+// ============================================================
+
+message GradientSubmission {
+  string node_id = 1;
+  int32 round = 2;
+  double timestamp = 3;
+  bytes gradient_data = 4;           // serialized numpy array
+  optional bytes snark_proof = 5;    // optional SNARK proof bytes
+  bytes signature = 6;               // Ed25519 signature
+  bytes vk = 7;                      // verification key for signature
+}
+
+message GradientResponse {
+  bool accepted = 1;
+  string reason = 2;
+}
+
+// ============================================================
+// FOG ↔ FOG (HotStuff Consensus — gRPC streaming)
+// ============================================================
+
+message ConsensusMessage {
+  oneof msg {
+    PrepareProposal prepare = 1;
+    VoteMessage vote = 2;
+    QcBroadcast qc = 3;
+    ViewChangeMessage view_change = 4;
+    NewViewMessage new_view = 5;
+  }
+}
+
+message PrepareProposal {
+  string leader_id = 1;
+  int32 round = 2;
+  bytes block_data = 3;              // serialized Block
+  bytes signature = 4;
+}
+
+message VoteMessage {
+  string node_id = 1;
+  int32 round = 2;
+  string phase = 3;                  // "prepare" | "pre_commit" | "commit"
+  bytes block_hash = 4;
+  bytes signature = 5;
+}
+
+message QcBroadcast {
+  string leader_id = 1;
+  int32 round = 2;
+  string phase = 3;
+  bytes quorum_certificate = 4;      // serialized QuorumCertificate
+}
+
+message ViewChangeMessage {
+  string node_id = 1;
+  int32 new_view = 2;
+  bytes highest_qc = 3;              // serialized highest QC
+  bytes signature = 4;
+}
+
+message NewViewMessage {
+  string leader_id = 1;
+  int32 new_view = 2;
+  repeated bytes qc_set = 3;         // serialized QC list
+  bytes signature = 4;
+}
+
+message Empty {}
+
+service FogConsensus {
+  // Bidirectional streaming for HotStuff consensus messages
+  rpc ConsensusStream(stream ConsensusMessage) returns (stream ConsensusMessage);
+}
+
+// ============================================================
+// FOG → CLOUD (gRPC unary)
+// ============================================================
+
+message ClusterOutput {
+  string cluster_id = 1;
+  int32 round = 2;
+  bytes delta_w = 3;                 // serialized gradient delta
+  optional bytes stark_proof = 4;    // STARK proof of aggregation
+  optional bytes qc_commit = 5;      // serialized QuorumCertificate
+  int32 n_devices = 6;
+}
+
+message GlobalOutputMessage {
+  bytes delta_w_inter = 1;
+  optional bytes pi_inter = 2;       // inter-regional STARK proof
+  int32 n_active_clusters = 3;
+  int32 round = 4;
+  bool converged = 5;
+}
+
+service CloudAggregation {
+  rpc SubmitClusterOutput(ClusterOutput) returns (GlobalOutputMessage);
+}
+
+// ============================================================
+// CLOUD → FOG / EDGE (model distribution)
+// ============================================================
+
+message ModelDistribution {
+  int32 round = 1;
+  bytes global_weights = 2;          // serialized model weights
+  bytes model_hash = 3;
+}
+
+service ModelService {
+  rpc GetModel(Empty) returns (ModelDistribution);
+  rpc PushModel(ModelDistribution) returns (Empty);
+}

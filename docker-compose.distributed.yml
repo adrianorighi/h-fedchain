@@ -1,0 +1,77 @@
+x-common: &common
+  build:
+    context: .
+    dockerfile: services/Dockerfile
+  networks:
+    - hfc-net
+  stop_grace_period: 5s
+
+services:
+  mqtt-broker:
+    image: eclipse-mosquitto:2
+    container_name: hfc-mqtt
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./config/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    networks:
+      - hfc-net
+
+  fog1:
+    <<: *common
+    container_name: hfc-fog1
+    environment:
+      NODE_ID: "fog1"
+      N: "3"
+      F: "1"
+      GRPC_PORT: "50051"
+      MQTT_BROKER: "mqtt-broker"
+      MQTT_PORT: "1883"
+      SERVICE: "fog"
+      PEERS: "fog2:50051,fog3:50051"
+      VARIANT: "no_zkp"
+    ports:
+      - "50051:50051"
+
+  fog2:
+    <<: *common
+    container_name: hfc-fog2
+    environment:
+      NODE_ID: "fog2"
+      N: "3"
+      F: "1"
+      GRPC_PORT: "50051"
+      MQTT_BROKER: "mqtt-broker"
+      MQTT_PORT: "1883"
+      SERVICE: "fog"
+      PEERS: "fog1:50051,fog3:50051"
+      VARIANT: "no_zkp"
+
+  fog3:
+    <<: *common
+    container_name: hfc-fog3
+    environment:
+      NODE_ID: "fog3"
+      N: "3"
+      F: "1"
+      GRPC_PORT: "50051"
+      MQTT_BROKER: "mqtt-broker"
+      MQTT_PORT: "1883"
+      SERVICE: "fog"
+      PEERS: "fog1:50051,fog2:50051"
+      VARIANT: "no_zkp"
+
+  cloud:
+    <<: *common
+    container_name: hfc-cloud
+    environment:
+      NODE_ID: "cloud"
+      GRPC_PORT: "50052"
+      SERVICE: "cloud"
+    ports:
+      - "50052:50052"
+
+networks:
+  hfc-net:
+    driver: bridge
