@@ -41,6 +41,49 @@ class MetricsCollector:
             return 0.0
         return len(self._records) / (total_time_seconds / 60.0)
 
+    def block_size_bytes(self) -> float:
+        vals = [r.get("block_size_bytes", 0) for r in self._records]
+        return statistics.mean(vals) if vals else 0.0
+
+    def comm_overhead_bytes(self) -> float:
+        vals = [r.get("comm_overhead_bytes", 0) for r in self._records]
+        return statistics.mean(vals) if vals else 0.0
+
+    def consensus_time_ms(self) -> float:
+        vals = [r.get("consensus_time_ms", 0) for r in self._records]
+        return statistics.mean(vals) if vals else 0.0
+
+    def vrf_election_uniformity(self) -> float:
+        from collections import Counter
+        leaders = [r.get("leader", "") for r in self._records if r.get("leader")]
+        if len(leaders) < 2:
+            return 1.0
+        counts = Counter(leaders)
+        expected = len(leaders) / len(counts)
+        chi2 = sum((c - expected) ** 2 / expected for c in counts.values())
+        return max(0.0, 1.0 - chi2 / (len(leaders) * 2))
+
+    def compliance_completeness(self) -> float:
+        if not self._records:
+            return 0.0
+        complete = sum(1 for r in self._records if r.get("qc_emitted", False))
+        return complete / len(self._records)
+
+    def all_metrics(self) -> dict:
+        return {
+            "avg_latency": self.avg_latency(),
+            "consensus_success": self.consensus_success_rate(),
+            "detection_rate": self.detection_rate(),
+            "false_positive_rate": self.false_positive_rate(),
+            "throughput": self.throughput(total_time_seconds=sum(
+                r.get("latency", 0) for r in self._records
+            )),
+            "block_size_bytes": self.block_size_bytes(),
+            "consensus_time_ms": self.consensus_time_ms(),
+            "vrf_uniformity": self.vrf_election_uniformity(),
+            "compliance": self.compliance_completeness(),
+        }
+
     def to_json(self, path: str):
         with open(path, "w") as f:
             json.dump(self._records, f, indent=2)

@@ -1,4 +1,5 @@
 import asyncio
+import pickle
 import time
 import numpy as np
 from hashlib import sha256
@@ -165,6 +166,8 @@ class Orchestrator:
             "round": round_num,
             "leader": leader_id,
             "latency": t_end - t_start,
+            "consensus_time_ms": (t_end - t_start) * 1000,
+            "block_size_bytes": len(pickle.dumps(block)),
             "num_accepted": len(block.accepted_devices),
             "num_rejected": len(block.rejected_devices),
             "ledger_height": self.nodes[0].ledger.get_height(),
