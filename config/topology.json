@@ -1,0 +1,10 @@
+{
+  "fog_nodes": [
+    {"id": "fog1", "host": "fog1.local", "port": 50051}
+  ],
+  "cloud": {"host": "cloud.local", "port": 50052},
+  "mqtt_broker": {"host": "mqtt.local", "port": 1883},
+  "edge_devices": ["d0", "d1", "d2"],
+  "f": 1,
+  "n": 3
+}
