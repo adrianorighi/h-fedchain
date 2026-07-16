@@ -11,7 +11,7 @@ async def run_multi_cluster(num_clusters: int, num_rounds: int = 10):
     clusters = [Cluster(cluster_id=f"c{i}", nodes_per_cluster=4,
                         devices_per_cluster=20, f=1, latency_ms=100.0)
                 for i in range(num_clusters)]
-    runner = ExperimentRunner(clusters, InterRegionalManager(), CloudComponent())
+    runner = ExperimentRunner(clusters, CloudComponent(), f=1)
     metrics = await runner.run_experiment(num_rounds=num_rounds)
     mc = MetricsCollector()
     for m in metrics:

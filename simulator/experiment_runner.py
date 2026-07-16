@@ -6,18 +6,17 @@ from simulator.cloud import CloudComponent
 
 class ExperimentRunner:
     def __init__(self, clusters: list[Cluster],
-                 interregional: InterRegionalManager,
-                 cloud: CloudComponent):
+                 cloud: CloudComponent,
+                 f: int = 1):
         self.clusters = clusters
-        self.interregional = interregional
+        self.interregional = InterRegionalManager(
+            clusters, n=len(clusters), f=f,
+        )
         self.cloud = cloud
         self.metrics: list[dict] = []
 
     async def run_round(self, round_num: int) -> dict:
-        cluster_outputs = await asyncio.gather(
-            *[c.run_round(round_num) for c in self.clusters]
-        )
-        global_output = await self.interregional.process(list(cluster_outputs))
+        global_output = await self.interregional.run_round(round_num)
         result = await self.cloud.process(global_output)
         self.metrics.append(result)
         return result

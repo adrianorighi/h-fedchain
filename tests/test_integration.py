@@ -101,9 +101,8 @@ async def test_multi_cluster_experiment_runner():
                 variant="no_zkp")
         for i in range(3)
     ]
-    interregional = InterRegionalManager()
     cloud = CloudComponent()
-    runner = ExperimentRunner(clusters, interregional, cloud)
+    runner = ExperimentRunner(clusters, cloud, f=1)
 
     result = await runner.run_round(round_num=1)
     assert result["round"] == 1
@@ -125,7 +124,7 @@ async def test_multi_round_multi_cluster():
         for i in range(2)
     ]
     runner = ExperimentRunner(
-        clusters, InterRegionalManager(), CloudComponent(),
+        clusters, CloudComponent(), f=1,
     )
     metrics = await runner.run_experiment(num_rounds=3)
     assert len(metrics) == 3

@@ -29,6 +29,17 @@ class Cluster:
     def nodes(self):
         return self.orch.nodes
 
+    @property
+    def representative_id(self) -> str:
+        return self.nodes[0].node_id if self.nodes else self.cluster_id
+
+    @property
+    def n_devices(self) -> int:
+        return self.orch.devices_per_cluster
+
+    async def get_regional_output(self, round_num: int) -> RegionalOutput:
+        return await self.run_round(round_num)
+
     async def run_round(self, round_num: int) -> RegionalOutput:
         result = await self.orch.run_round(round_num)
         if not result.get("qc_emitted", False):
