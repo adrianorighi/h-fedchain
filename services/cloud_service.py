@@ -6,6 +6,7 @@ from typing import Optional
 
 import numpy as np
 
+from core.cloud.model_validation import ModelValidationGate
 from core.ledger.worm_store import WormStore
 from hfc_types.block import GlobalOutput
 from hfc_types.crypto import StarkProof
@@ -23,6 +24,7 @@ class CloudService:
         self.grpc_port = grpc_port
         self.learning_rate = learning_rate
 
+        self.validation_gate = ModelValidationGate()
         self.worm = WormStore()
         self.stark_verifier = StarkVerifier()
         self.converged = False
@@ -107,12 +109,17 @@ class CloudService:
             weighted = np.zeros(1)
             delta_w_inter = b""
 
-        # Update global model
+        # Compute proposed new weights then validate
         if self.global_weights is not None:
+            w_new = {}
             for key in self.global_weights:
-                self.global_weights[key] -= self.learning_rate * weighted
+                w_new[key] = self.global_weights[key] - self.learning_rate * weighted
         else:
-            self.global_weights = {"W1": weighted}
+            w_new = {"W1": weighted}
+
+        result = self.validation_gate.validate(self.global_weights, w_new)
+        if result.accepted:
+            self.global_weights = w_new
 
         # Persist to WORM ledger
         global_output = GlobalOutput(
