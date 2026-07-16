@@ -2,6 +2,7 @@ from hfc_types.block import GlobalOutput
 from core.ledger.worm_store import WormStore
 from core.cloud.model_validation import ModelValidationGate, ValidationResult
 from services.model_registry import ModelRegistry
+from services.identity_service import GlobalIdentityService
 
 
 class CloudComponent:
@@ -10,6 +11,8 @@ class CloudComponent:
         self.worm = WormStore()
         self.converged = False
         self.model_registry = ModelRegistry()
+        self.identity_service = GlobalIdentityService()
+        self.ca_vk = self.identity_service.ca_vk
 
     def validate_update(self, w_old: dict, w_new: dict, loss: float = None):
         return self.validation_gate.validate(w_old, w_new, loss)

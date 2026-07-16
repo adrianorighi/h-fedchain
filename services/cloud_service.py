@@ -11,6 +11,7 @@ from core.ledger.worm_store import WormStore
 from hfc_types.block import GlobalOutput
 from hfc_types.crypto import StarkProof
 from zkp.stark import StarkVerifier
+from services.identity_service import GlobalIdentityService
 
 
 class CloudService:
@@ -27,6 +28,8 @@ class CloudService:
         self.validation_gate = ModelValidationGate()
         self.worm = WormStore()
         self.stark_verifier = StarkVerifier()
+        self.identity_service = GlobalIdentityService()
+        self.ca_vk = self.identity_service.ca_vk
         self.converged = False
         self.global_weights: Optional[dict] = None
 
