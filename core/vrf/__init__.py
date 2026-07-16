@@ -1,2 +1,4 @@
 from .election import VRFLeaderElection
-__all__ = ["VRFLeaderElection"]
+from . import bn254
+
+__all__ = ["VRFLeaderElection", "bn254"]
