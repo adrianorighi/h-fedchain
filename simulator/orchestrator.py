@@ -77,6 +77,7 @@ class Orchestrator:
         for node in self.nodes:
             for other in self.nodes:
                 node._set_vk(other.node_id, other.vk)
+                node._set_peer_sk(other.node_id, other.sk)
 
         if self.use_dataset:
             self._init_dataset()

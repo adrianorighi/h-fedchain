@@ -13,6 +13,7 @@ from core.ledger.store import LedgerStore
 from zkp.stark import StarkProver, StarkVerifier
 from zkp.snark import SnarkVerifier
 from simulator.network import EmulatedNetwork
+from core.pki import sign as pki_sign
 from core.pki.certificate import Certificate
 
 
@@ -47,10 +48,14 @@ class FogNode:
         self.snark_verifier = SnarkVerifier()
         self._vk_map: dict[str, bytes] = {p: b"" for p in peers}
         self._vk_map[node_id] = vk
+        self._peers_sk: dict[str, bytes] = {}
         self._variant: str = "no_zkp"
 
     def _set_vk(self, node_id: str, vk: bytes):
         self._vk_map[node_id] = vk
+
+    def _set_peer_sk(self, node_id: str, sk: bytes):
+        self._peers_sk[node_id] = sk
 
     def set_variant(self, variant: str):
         self._variant = variant
@@ -130,6 +135,19 @@ class FogNode:
         )
         return agg
 
+    @staticmethod
+    def _sign_votes(peers: list[str], quorum: int, peers_sk: dict[str, bytes],
+                    round_num: int, block_hash: bytes, msg_type: MessageType) -> list[tuple[str, bytes]]:
+        msg = str(round_num).encode() + block_hash + msg_type.name.encode()
+        votes = []
+        for p in peers[:quorum]:
+            sk = peers_sk.get(p)
+            if sk is None:
+                continue
+            sig = pki_sign(sk, msg)
+            votes.append((p, sig))
+        return votes
+
     async def run_consensus(
         self,
         round_num: int,
@@ -143,29 +161,48 @@ class FogNode:
             if proposal is None:
                 return None
             quorum = self.qc.quorum_size(self.n)
-            votes = [(p, b"sim_sig") for p in self.peers[:quorum]]
+
+            prepare_votes = self._sign_votes(
+                self.peers, quorum, self._peers_sk,
+                round_num, proposed_block.hash, MessageType.PREPARE,
+            )
+            if len(prepare_votes) < quorum:
+                return None
             qc_prepare = await self.hotstuff.collect_votes(
-                round_num, proposed_block.hash, "prepare", votes,
-                vk_map=None,
+                round_num, proposed_block.hash, "prepare", prepare_votes,
+                vk_map=self._vk_map,
             )
             if qc_prepare is None:
                 return None
+
             for _ in self.peers:
                 await self.hotstuff.on_pre_commit(qc_prepare)
+
+            pre_commit_votes = self._sign_votes(
+                self.peers, quorum, self._peers_sk,
+                round_num, proposed_block.hash, MessageType.PRE_COMMIT,
+            )
             qc_pre_commit = await self.hotstuff.collect_votes(
-                round_num, proposed_block.hash, "pre_commit", votes,
-                vk_map=None,
+                round_num, proposed_block.hash, "pre_commit", pre_commit_votes,
+                vk_map=self._vk_map,
             )
             if qc_pre_commit is None:
                 return None
+
             for _ in self.peers:
                 await self.hotstuff.on_commit(qc_pre_commit)
+
+            commit_votes = self._sign_votes(
+                self.peers, quorum, self._peers_sk,
+                round_num, proposed_block.hash, MessageType.COMMIT,
+            )
             qc_commit = await self.hotstuff.collect_votes(
-                round_num, proposed_block.hash, "commit", votes,
-                vk_map=None,
+                round_num, proposed_block.hash, "commit", commit_votes,
+                vk_map=self._vk_map,
             )
             if qc_commit is None:
                 return None
+
             entry = await self.hotstuff.on_qc_commit(qc_commit)
             if entry is not None and self._variant in ("stark", "full"):
                 proof = await self.stark_prover.generate_proof(entry.block)
