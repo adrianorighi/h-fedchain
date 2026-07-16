@@ -15,6 +15,8 @@ from zkp.snark import SnarkVerifier
 from simulator.network import EmulatedNetwork
 from core.pki import sign as pki_sign
 from core.pki.certificate import Certificate
+from core.pki.verifier import VerificationPipeline
+from core.pki.ca import CertificateAuthority
 
 
 class FogNode:
@@ -49,6 +51,9 @@ class FogNode:
         self._vk_map: dict[str, bytes] = {p: b"" for p in peers}
         self._vk_map[node_id] = vk
         self._peers_sk: dict[str, bytes] = {}
+        self._cert_map: dict[str, Certificate] = {}
+        self.ca: Optional[CertificateAuthority] = None
+        self.ca_vk: bytes = b""
         self._variant: str = "no_zkp"
 
     def _set_vk(self, node_id: str, vk: bytes):
@@ -77,22 +82,52 @@ class FogNode:
         rejected_adversarial = 0
         rejected_honest = 0
 
+        use_pipeline = self.ca is not None
+
+        if use_pipeline:
+            pipeline = VerificationPipeline(
+                self.ca, self.ca_vk, self._cert_map,
+                use_snark=(self._variant in ("snark", "full")),
+            )
+
         for item in gradients_or_proofs:
             if isinstance(item, GradientWithProof):
-                grad = item.gradient
-                proof = item.snark_proof
-            else:
                 grad = item
-                proof = None
+            else:
+                grad = GradientWithProof(gradient=item, snark_proof=None)
 
-            is_adv = grad.node_id.startswith("adv_")
+            if use_pipeline:
+                result = pipeline.verify(grad)
+                if result.accepted:
+                    valid_grads.append(Gradient(
+                        node_id=result.node_id,
+                        round=grad.gradient.round,
+                        data=result.gradient_data,
+                    ))
+                    continue
+                is_adv = grad.gradient.node_id.startswith("adv_")
+                if is_adv:
+                    total_adversarial += 1
+                    rejected_adversarial += 1
+                else:
+                    rejected_honest += 1
+                if not hasattr(self, '_audit_log'):
+                    self._audit_log = []
+                self._audit_log.append({
+                    "node": result.node_id,
+                    "reason": result.reason,
+                    "round": round_num,
+                })
+                continue
+
+            is_adv = grad.gradient.node_id.startswith("adv_")
             if is_adv:
                 total_adversarial += 1
 
-            if proof is not None and self._variant in ("snark", "full"):
-                vk = self._vk_map.get(grad.node_id)
+            if grad.snark_proof is not None and self._variant in ("snark", "full"):
+                vk = self._vk_map.get(grad.gradient.node_id)
                 if vk is None or not await self.snark_verifier.verify(
-                    proof, model_hash or b"", vk
+                    grad.snark_proof, model_hash or b"", vk
                 ):
                     if is_adv:
                         rejected_adversarial += 1
@@ -104,7 +139,7 @@ class FogNode:
                 rejected_adversarial += 1
                 continue
 
-            valid_grads.append(grad)
+            valid_grads.append(grad.gradient)
 
         if len(valid_grads) < self.n - self.f:
             return None

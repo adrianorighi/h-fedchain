@@ -46,8 +46,8 @@ class EdgeWorker:
             num_classes=num_classes,
         )
 
+        self.sk, self.vk = generate_keypair()
         if self.use_snark:
-            self.sk, self.vk = generate_keypair()
             self.snark_prover = SnarkProver()
 
     def _apply_attack(self, round_num: int) -> np.ndarray:
@@ -67,10 +67,20 @@ class EdgeWorker:
         else:
             grad = self.model.compute_gradient(self.X, y_effective, global_weights)
 
+        from core.pki import generate_keypair, sign as pki_sign
+
+        msg = f"{self.device_id}:{round_num}".encode()
+        if self.is_adversarial:
+            fake_sk, _ = generate_keypair()
+            gradient_signature = pki_sign(fake_sk, msg)
+        else:
+            gradient_signature = pki_sign(self.sk, msg)
+
         gradient = Gradient(
             node_id=self.device_id,
             round=round_num,
             data=grad.tolist(),
+            signature=gradient_signature,
         )
 
         snark_proof: Optional[SnarkProof] = None

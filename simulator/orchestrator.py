@@ -54,6 +54,7 @@ class Orchestrator:
     def setup(self):
         ca_sk, ca_vk = generate_keypair()
         self.ca = CertificateAuthority("ca_root", ca_sk, ca_vk)
+        self.ca_vk = ca_vk
 
         for i in range(self.nodes_per_cluster):
             nid = f"n{i}"
@@ -78,6 +79,9 @@ class Orchestrator:
             for other in self.nodes:
                 node._set_vk(other.node_id, other.vk)
                 node._set_peer_sk(other.node_id, other.sk)
+            node.ca = self.ca
+            node.ca_vk = self.ca_vk
+            node._cert_map = self._certificates
 
         if self.use_dataset:
             self._init_dataset()
@@ -134,6 +138,8 @@ class Orchestrator:
         if self.use_dataset:
             return self._generate_real_gradients(round_num)
 
+        from core.pki import generate_keypair, sign as pki_sign
+
         grads: list[GradientWithProof] = []
         for d in range(self.devices_per_cluster * self.num_clusters):
             is_adv = (
@@ -146,8 +152,16 @@ class Orchestrator:
                 else [100.0 * float(np.random.randn()) for _ in range(10)]
             )
             gid = f"adv_{d}" if is_adv else f"d{d}"
+            if is_adv:
+                fake_sk, _ = generate_keypair()
+                sig = pki_sign(fake_sk, f"{gid}:{round_num}".encode())
+            else:
+                device_sk, device_vk = generate_keypair()
+                cert = self.ca.issue_certificate(gid, device_vk)
+                self._certificates[gid] = cert
+                sig = pki_sign(device_sk, f"{gid}:{round_num}".encode())
             grads.append(GradientWithProof(
-                gradient=Gradient(node_id=gid, round=round_num, data=data),
+                gradient=Gradient(node_id=gid, round=round_num, data=data, signature=sig),
             ))
         return grads
 
