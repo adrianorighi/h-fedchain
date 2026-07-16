@@ -19,6 +19,7 @@ async def run():
     print(f"  Consensus time:    {mc.consensus_time_ms():.1f} ms")
     print(f"  VRF uniformity:    {mc.vrf_election_uniformity():.3f}")
     print(f"  Compliance:        {mc.compliance_completeness():.2%}")
+    return mc
 
 if __name__ == "__main__":
     asyncio.run(run())

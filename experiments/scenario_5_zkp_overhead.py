@@ -17,10 +17,14 @@ async def run_variant(variant: str, num_rounds: int = 5) -> dict:
           f"consensus_time={mc.consensus_time_ms():.1f}ms  "
           f"compliance={mc.compliance_completeness():.2%}")
     mc.to_json(f"results/scenario_5_{variant}.json")
+    return mc
 
 async def run():
+    collectors = []
     for v in ["no_zkp", "snark", "stark", "full"]:
-        await run_variant(v)
+        mc = await run_variant(v)
+        collectors.append(mc)
+    return collectors[-1]
 
 if __name__ == "__main__":
     asyncio.run(run())

@@ -17,10 +17,14 @@ async def run_scale(devices_per_cluster: int):
           f"throughput={mc.throughput(sum(r.get('latency',0) for r in result.round_metrics)):.0f} blocks/min  "
           f"consensus_time={mc.consensus_time_ms():.1f}ms")
     mc.to_json(f"results/scenario_2_{devices_per_cluster}.json")
+    return mc
 
 async def run():
+    collectors = []
     for s in [10, 25, 50, 75, 100]:
-        await run_scale(s)
+        mc = await run_scale(s)
+        collectors.append(mc)
+    return collectors[-1]  # return last collector for summary
 
 if __name__ == "__main__":
     asyncio.run(run())

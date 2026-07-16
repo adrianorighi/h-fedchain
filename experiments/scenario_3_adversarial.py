@@ -18,10 +18,14 @@ async def run_adv(adversarial_ratio: float):
           f"SC={mc.consensus_success_rate():.2%}  "
           f"Compliance={mc.compliance_completeness():.2%}")
     mc.to_json(f"results/scenario_3_adv_{pct}.json")
+    return mc
 
 async def run():
+    collectors = []
     for r in [0.0, 0.05, 0.10, 0.20, 0.30]:
-        await run_adv(r)
+        mc = await run_adv(r)
+        collectors.append(mc)
+    return collectors[-1]
 
 if __name__ == "__main__":
     asyncio.run(run())

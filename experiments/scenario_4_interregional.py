@@ -24,8 +24,11 @@ async def run_multi_cluster(num_clusters: int, num_rounds: int = 10):
     return mc
 
 async def run():
+    collectors = []
     for s in [2, 4, 8, 12, 16]:
-        await run_multi_cluster(s, num_rounds=5)
+        mc = await run_multi_cluster(s, num_rounds=5)
+        collectors.append(mc)
+    return collectors[-1]
 
 if __name__ == "__main__":
     asyncio.run(run())
