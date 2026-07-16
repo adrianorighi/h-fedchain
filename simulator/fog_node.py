@@ -13,6 +13,7 @@ from core.ledger.store import LedgerStore
 from zkp.stark import StarkProver, StarkVerifier
 from zkp.snark import SnarkVerifier
 from simulator.network import EmulatedNetwork
+from core.pki.certificate import Certificate
 
 
 class FogNode:
@@ -25,10 +26,12 @@ class FogNode:
         n: int,
         f: int,
         network: EmulatedNetwork,
+        certificate: Optional[Certificate] = None,
     ):
         self.node_id = node_id
         self.sk = sk
         self.vk = vk
+        self.certificate = certificate
         self.peers = peers
         self.n = n
         self.f = f

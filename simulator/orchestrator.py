@@ -8,7 +8,8 @@ from hfc_types.messages import Gradient, GradientWithProof, VRFMessage, Aggregat
 from hfc_types.block import Block, QuorumCertificate
 from simulator.network import EmulatedNetwork
 from simulator.fog_node import FogNode
-from core.pki import generate_keypair
+from core.pki import generate_keypair, CertificateAuthority
+from core.pki.certificate import Certificate
 from dataset.loader import PTBXLLoader
 from dataset.partitioner import DirichletPartitioner
 from dataset.edge_worker import EdgeWorker
@@ -48,8 +49,12 @@ class Orchestrator:
         self.result = ExperimentResult()
         self.edge_workers: list[EdgeWorker] = []
         self._global_weights: dict = {}
+        self._certificates: dict[str, Certificate] = {}
 
     def setup(self):
+        ca_sk, ca_vk = generate_keypair()
+        self.ca = CertificateAuthority("ca_root", ca_sk, ca_vk)
+
         for i in range(self.nodes_per_cluster):
             nid = f"n{i}"
             sk, vk = generate_keypair()
@@ -65,6 +70,9 @@ class Orchestrator:
                 network=self.network,
             )
             node.set_variant(self.variant)
+            cert = self.ca.issue_certificate(nid, vk)
+            node.certificate = cert
+            self._certificates[nid] = cert
             self.nodes.append(node)
         for node in self.nodes:
             for other in self.nodes:
@@ -108,6 +116,14 @@ class Orchestrator:
             if use_snark:
                 for node in self.nodes:
                     node._set_vk(worker.device_id, worker.vk)
+
+        for worker in self.edge_workers:
+            vk = getattr(worker, 'vk', None)
+            if vk:
+                cert = self.ca.issue_certificate(worker.device_id, vk)
+                self._certificates[worker.device_id] = cert
+                worker.certificate = cert
+                worker.ca_vk = self.ca.vk
 
         self._global_weights = self.edge_workers[0].model.get_weights()
 

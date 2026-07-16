@@ -5,6 +5,7 @@ from hfc_types.messages import Gradient, GradientWithProof
 from hfc_types.crypto import SnarkProof
 from dataset.model import MLP
 from core.pki import generate_keypair
+from core.pki.certificate import Certificate
 from zkp.snark import SnarkProver
 
 
@@ -21,6 +22,8 @@ class EdgeWorker:
         hidden_dim: int = 64,
         num_classes: int = 5,
         use_snark: bool = False,
+        certificate: Optional[Certificate] = None,
+        ca_vk: Optional[bytes] = None,
     ):
         self.device_id = device_id
         self.indices = indices
@@ -28,6 +31,8 @@ class EdgeWorker:
         self.attack_type = attack_type
         self.num_classes = num_classes
         self.use_snark = use_snark
+        self.certificate = certificate
+        self.ca_vk = ca_vk
 
         self.local_data = all_data[indices]
         self.local_labels = all_labels[indices].copy()
