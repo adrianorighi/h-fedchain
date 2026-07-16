@@ -24,6 +24,7 @@ class EdgeWorker:
         use_snark: bool = False,
         certificate: Optional[Certificate] = None,
         ca_vk: Optional[bytes] = None,
+        use_encryption: bool = False,
     ):
         self.device_id = device_id
         self.indices = indices
@@ -33,6 +34,11 @@ class EdgeWorker:
         self.use_snark = use_snark
         self.certificate = certificate
         self.ca_vk = ca_vk
+        self.use_encryption = use_encryption
+        self.store = None
+        if use_encryption:
+            from dataset.encrypted_store import EncryptedLocalStore
+            self.store = EncryptedLocalStore(device_id)
 
         self.local_data = all_data[indices]
         self.local_labels = all_labels[indices].copy()
@@ -94,6 +100,28 @@ class EdgeWorker:
             )
 
         return GradientWithProof(gradient=gradient, snark_proof=snark_proof)
+
+    def save_local_data(self, X, y, path: str):
+        import pickle
+        data = pickle.dumps({"X": X, "y": y})
+        if self.store:
+            self.store.save_data(data, path)
+        else:
+            with open(path, 'wb') as f:
+                f.write(data)
+
+    def load_local_data(self, path: str):
+        import pickle
+        import os as _os
+        if not _os.path.exists(path):
+            raise FileNotFoundError(f"Dados não encontrados: {path}")
+        if self.store:
+            data = self.store.load_data(path)
+        else:
+            with open(path, 'rb') as f:
+                data = f.read()
+        loaded = pickle.loads(data)
+        return loaded["X"], loaded["y"]
 
     @property
     def num_samples(self) -> int:
