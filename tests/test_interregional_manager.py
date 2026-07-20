@@ -28,3 +28,15 @@ async def test_vrf_election_different_seeds():
     leader_b = manager._elect_leader_vrf(candidates, b"seed_b")
     assert leader_a in candidates
     assert leader_b in candidates
+
+
+@pytest.mark.asyncio
+async def test_vrf_election_fairness():
+    manager = InterRegionalManager(n=3, f=1)
+    candidates = ["c0", "c1", "c2"]
+    leaders = set()
+    for i in range(20):
+        seed = f"round_{i}".encode()
+        leader = manager._elect_leader_vrf(candidates, seed)
+        leaders.add(leader)
+    assert len(leaders) > 1, "VRF should distribute leadership across candidates"

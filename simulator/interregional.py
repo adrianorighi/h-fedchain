@@ -3,7 +3,7 @@ from typing import Optional
 from core.hotstuff.interregional import InterRegionalConsensus
 from core.vrf.election import VRFLeaderElection
 from core.pki.ed25519 import generate_keypair
-from hfc_types.messages import VRFMessage
+
 from zkp.stark import StarkVerifier, StarkProver
 from hfc_types.block import GlobalOutput, RegionalOutput
 
@@ -92,9 +92,13 @@ class InterRegionalManager:
     def _elect_leader_vrf(self, candidates: list[str], seed: bytes) -> str:
         if not candidates:
             return ""
-        vrf_msgs = []
+        best = candidates[0]
+        best_gamma = None
         for c in candidates:
-            gamma, proof = self.vrf.evaluate(self._manager_sk, seed)
-            vrf_msgs.append(VRFMessage(node_id=c, round=0, y=gamma, proof=proof))
-        vk_map = {c: self._manager_vk for c in candidates}
-        return self.vrf.elect(vrf_msgs, seed, vk_map)
+            alpha = seed + c.encode()
+            gamma, _proof = self.vrf.evaluate(self._manager_sk, alpha)
+            gamma_int = int.from_bytes(gamma, 'big')
+            if best_gamma is None or gamma_int < best_gamma:
+                best_gamma = gamma_int
+                best = c
+        return best
