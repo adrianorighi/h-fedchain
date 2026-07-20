@@ -1,7 +1,10 @@
 import asyncio
+import logging
 import time
 from typing import Optional
 from core.network import NetworkMessage
+
+logger = logging.getLogger(__name__)
 
 
 class GrpcTransport:
@@ -9,10 +12,10 @@ class GrpcTransport:
         self._queues: dict[str, asyncio.Queue] = {}
 
     async def start(self) -> None:
-        pass
+        logger.info("GrpcTransport started (in-process message bus, no gRPC server)")
 
     async def stop(self) -> None:
-        pass
+        logger.info("GrpcTransport stopped")
 
     async def register_node(self, node_id: str) -> None:
         if node_id not in self._queues:

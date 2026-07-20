@@ -1,7 +1,10 @@
 import json
+import logging
 from typing import Optional, Callable, Awaitable
 import asyncio
 import paho.mqtt.client as mqtt
+
+logger = logging.getLogger(__name__)
 
 
 class MqttClient:
@@ -23,8 +26,8 @@ class MqttClient:
             for handler in self._handlers[topic]:
                 try:
                     handler(msg.payload)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.error("MQTT handler failed for topic %s: %s", topic, e)
 
     def subscribe(self, topic: str, handler: Callable[[bytes], None]):
         if topic not in self._handlers:

@@ -2,10 +2,13 @@
 
 import asyncio
 import hashlib
+import logging
 import pickle
 import time
 from dataclasses import replace
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 import numpy as np
 
@@ -98,8 +101,8 @@ class FogService:
                 self.mqtt.subscribe(
                     f"gradients/{self.node_id}", self._on_mqtt_gradient
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error("MQTT connection failed for node %s: %s", self.node_id, e)
         await self._connect_peers()
         asyncio.create_task(self._serve_grpc())
         self._running = True
@@ -126,8 +129,8 @@ class FogService:
             asyncio.get_running_loop().create_task(
                 self.on_gradient_received(grad)
             )
-        except RuntimeError:
-            pass
+        except RuntimeError as e:
+            logger.warning("No running event loop for gradient callback: %s", e)
 
     async def on_gradient_received(self, gradient_with_proof: GradientWithProof):
         self._pending_gradients.append(gradient_with_proof)
