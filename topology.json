@@ -1,0 +1,20 @@
+{
+  "clusters": [
+    {
+      "id": "cluster-a",
+      "fog_nodes": ["fog-a-0", "fog-a-1", "fog-a-2", "fog-a-3", "fog-a-4"],
+      "edge_devices": 20,
+      "latency_ms": 10
+    },
+    {
+      "id": "cluster-b",
+      "fog_nodes": ["fog-b-0", "fog-b-1", "fog-b-2", "fog-b-3", "fog-b-4"],
+      "edge_devices": 20,
+      "latency_ms": 10
+    }
+  ],
+  "cloud": {
+    "services": ["cloud-0"],
+    "fog_to_cloud_latency_ms": 50
+  }
+}
