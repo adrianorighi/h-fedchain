@@ -6,3 +6,5 @@ results/
 *.egg-info/
 specs/*
 plans/*
+.opencode
+.worktrees/
