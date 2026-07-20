@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloud-service
+  namespace: hfedchain
+  labels:
+    app: hfedchain
+    component: cloud
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: hfedchain
+      component: cloud
+  template:
+    metadata:
+      labels:
+        app: hfedchain
+        component: cloud
+    spec:
+      containers:
+      - name: cloud
+        image: hfedchain/cloud:latest
+        ports:
+        - containerPort: 50051
+          name: grpc
+        envFrom:
+        - configMapRef:
+            name: cloud-config
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2"
+        volumeMounts:
+        - name: worm-storage
+          mountPath: /data/worm
+        - name: model-storage
+          mountPath: /data/models
+      volumes:
+      - name: worm-storage
+        persistentVolumeClaim:
+          claimName: cloud-worm-pvc
+      - name: model-storage
+        emptyDir: {}
