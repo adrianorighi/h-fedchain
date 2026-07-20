@@ -1,3 +1,4 @@
+import time
 import numpy as np
 from dataclasses import replace
 from typing import Optional
@@ -17,6 +18,7 @@ from core.pki import sign as pki_sign
 from core.pki.certificate import Certificate
 from core.pki.verifier import VerificationPipeline
 from core.pki.ca import CertificateAuthority
+from core.audit.logger import AuditLogger
 
 
 class FogNode:
@@ -55,6 +57,8 @@ class FogNode:
         self.ca: Optional[CertificateAuthority] = None
         self.ca_vk: bytes = b""
         self._variant: str = "no_zkp"
+        self.audit_logger: Optional[AuditLogger] = None
+        self.stage_times: dict[str, float] = {}
 
     def _set_vk(self, node_id: str, vk: bytes):
         self._vk_map[node_id] = vk
@@ -81,6 +85,8 @@ class FogNode:
         total_adversarial = 0
         rejected_adversarial = 0
         rejected_honest = 0
+        self.stage_times = {}
+        auditor = self.audit_logger
 
         use_pipeline = self.ca is not None
 
@@ -142,6 +148,11 @@ class FogNode:
             valid_grads.append(grad.gradient)
 
         if len(valid_grads) < self.n - self.f:
+            if auditor is not None:
+                auditor.log("INSUF_CONTRIBUTIONS", self.node_id, round_num,
+                            {"valid": len(valid_grads), "required": self.n - self.f})
+                auditor.log("ROUND_ABORTED", self.node_id, round_num,
+                            {"reason": "Insufficient contributions, round aborted"})
             return None
 
         np_grads = [np.array(g.data) for g in valid_grads]
