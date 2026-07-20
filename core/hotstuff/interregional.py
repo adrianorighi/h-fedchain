@@ -1,10 +1,11 @@
 import hashlib
+import logging
 from typing import Optional
 from core.hotstuff.quorum import QuorumCertifier
 from hfc_types.messages import MessageType
 from hfc_types.block import QuorumCertificate
 
-P = 2147483647  # Prime for STARK field
+logger = logging.getLogger(__name__)
 
 
 class InterRegionalConsensus:
@@ -15,54 +16,40 @@ class InterRegionalConsensus:
         self.f = f
         self.qc_certifier = QuorumCertifier()
         self.qc: Optional[QuorumCertificate] = None
-        self.qc_signatures: list[tuple[str, bytes]] = []
 
     def run_round(self, regional_outputs: list[tuple[str, bytes]],
                   leader_id: str) -> Optional[list[bytes]]:
-        if len(regional_outputs) < self.n - self.f:
+        quorum = self.qc_certifier.quorum_size(self.n)
+        if len(regional_outputs) < quorum:
+            logger.warning("inter-regional round aborted: %d inputs < %d quorum",
+                           len(regional_outputs), quorum)
             return None
 
         inputs = [data for _, data in regional_outputs]
         block_hash = hashlib.sha256(b"".join(inputs)).digest()
 
-        n_valid = len(inputs)
-        quorum = self.qc_certifier.quorum_size(self.n)
+        n_inputs = len(inputs)
+        phases = [
+            ("prepare", MessageType.PREPARE),
+            ("pre_commit", MessageType.PRE_COMMIT),
+            ("commit", MessageType.COMMIT),
+        ]
 
-        # Fase 1: PREPARE
-        prepare_votes = self._simulate_votes(n_valid, "prepare", block_hash)
-        qc_prepare = self.qc_certifier.collect(
-            round=0, block_hash=block_hash,
-            msg_type=MessageType.PREPARE,
-            signatures=prepare_votes,
-            quorum_size=quorum,
-        )
-        if qc_prepare is None:
-            return None
+        for phase_name, msg_type in phases:
+            votes = self._simulate_votes(n_inputs, phase_name, block_hash)
+            try:
+                qc = self.qc_certifier.collect(
+                    round=0, block_hash=block_hash,
+                    msg_type=msg_type,
+                    signatures=votes,
+                    quorum_size=quorum,
+                )
+            except ValueError:
+                logger.warning("inter-regional quorum not reached at %s phase", phase_name)
+                return None
+            if phase_name == "commit":
+                self.qc = qc
 
-        # Fase 2: PRE-COMMIT
-        pre_commit_votes = self._simulate_votes(n_valid, "pre_commit", block_hash)
-        qc_pre_commit = self.qc_certifier.collect(
-            round=0, block_hash=block_hash,
-            msg_type=MessageType.PRE_COMMIT,
-            signatures=pre_commit_votes,
-            quorum_size=quorum,
-        )
-        if qc_pre_commit is None:
-            return None
-
-        # Fase 3: COMMIT
-        commit_votes = self._simulate_votes(n_valid, "commit", block_hash)
-        qc_commit = self.qc_certifier.collect(
-            round=0, block_hash=block_hash,
-            msg_type=MessageType.COMMIT,
-            signatures=commit_votes,
-            quorum_size=quorum,
-        )
-        if qc_commit is None:
-            return None
-
-        self.qc = qc_commit
-        self.qc_signatures = commit_votes[:quorum]
         return inputs
 
     def _simulate_votes(self, n_voters: int, phase: str,
