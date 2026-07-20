@@ -1,6 +1,9 @@
 import hashlib
 from typing import Optional
 from core.hotstuff.interregional import InterRegionalConsensus
+from core.vrf.election import VRFLeaderElection
+from core.pki.ed25519 import generate_keypair
+from hfc_types.messages import VRFMessage
 from zkp.stark import StarkVerifier, StarkProver
 from hfc_types.block import GlobalOutput, RegionalOutput
 
@@ -18,6 +21,8 @@ class InterRegionalManager:
         self.stark_verifier = stark_verifier or StarkVerifier()
         self.stark_prover = stark_prover or StarkProver()
         self.vk_map: dict[str, bytes] = {}
+        self.vrf = VRFLeaderElection()
+        self._manager_sk, self._manager_vk = generate_keypair()
 
     def set_vk(self, node_id: str, vk: bytes):
         self.vk_map[node_id] = vk
@@ -57,7 +62,7 @@ class InterRegionalManager:
         seed = hashlib.sha256(f"inter_round_{round_num}".encode()).digest()
         candidates = [getattr(c, 'representative_id', c.cluster_id)
                       for c in self.clusters]
-        leader_id = self._elect_leader(candidates, seed)
+        leader_id = self._elect_leader_vrf(candidates, seed)
 
         # 3. Consenso inter-regional
         approved = self.consensus.run_round(
@@ -84,9 +89,12 @@ class InterRegionalManager:
             round_num=round_num,
         )
 
-    def _elect_leader(self, candidates: list[str], seed: bytes) -> str:
+    def _elect_leader_vrf(self, candidates: list[str], seed: bytes) -> str:
         if not candidates:
             return ""
-        return min(candidates, key=lambda nid: int.from_bytes(
-            hashlib.sha256(nid.encode() + seed).digest()[:8], 'big'
-        ))
+        vrf_msgs = []
+        for c in candidates:
+            gamma, proof = self.vrf.evaluate(self._manager_sk, seed)
+            vrf_msgs.append(VRFMessage(node_id=c, round=0, y=gamma, proof=proof))
+        vk_map = {c: self._manager_vk for c in candidates}
+        return self.vrf.elect(vrf_msgs, seed, vk_map)
