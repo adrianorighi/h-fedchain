@@ -17,6 +17,14 @@ services:
       - ./config/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
     networks:
       - hfc-net
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          cpus: "0.25"
+          memory: 128M
 
   fog1:
     <<: *common
@@ -33,6 +41,14 @@ services:
       VARIANT: "no_zkp"
     ports:
       - "50051:50051"
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+        reservations:
+          cpus: "0.5"
+          memory: 256M
 
   fog2:
     <<: *common
@@ -47,6 +63,14 @@ services:
       SERVICE: "fog"
       PEERS: "fog1:50051,fog3:50051"
       VARIANT: "no_zkp"
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+        reservations:
+          cpus: "0.5"
+          memory: 256M
 
   fog3:
     <<: *common
@@ -61,6 +85,14 @@ services:
       SERVICE: "fog"
       PEERS: "fog1:50051,fog2:50051"
       VARIANT: "no_zkp"
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+        reservations:
+          cpus: "0.5"
+          memory: 256M
 
   cloud:
     <<: *common
@@ -71,6 +103,14 @@ services:
       SERVICE: "cloud"
     ports:
       - "50052:50052"
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+        reservations:
+          cpus: "1"
+          memory: 512M
 
 networks:
   hfc-net:
