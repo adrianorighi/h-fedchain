@@ -6,6 +6,7 @@ from core.pki.ed25519 import generate_keypair
 
 from zkp.stark import StarkVerifier, StarkProver
 from hfc_types.block import GlobalOutput, RegionalOutput
+from core.ledger.interregional_ledger import InterRegionalLedger
 
 
 class InterRegionalManager:
@@ -23,6 +24,7 @@ class InterRegionalManager:
         self.vk_map: dict[str, bytes] = {}
         self.vrf = VRFLeaderElection()
         self._manager_sk, self._manager_vk = generate_keypair()
+        self.ledger = InterRegionalLedger()
 
     def set_vk(self, node_id: str, vk: bytes):
         self.vk_map[node_id] = vk
@@ -81,6 +83,9 @@ class InterRegionalManager:
 
         # 5. STARK proof inter-regional (placeholder para protótipo)
         pi_inter = None
+
+        self.ledger.append(round_num, delta_w_inter, pi_inter or b"",
+                          [r.cluster_id for r in regionals])
 
         return GlobalOutput(
             delta_w_inter=delta_w_inter,
