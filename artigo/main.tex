@@ -8,10 +8,15 @@
 
 \usepackage{algorithm}
 \usepackage{algpseudocode}
+
+\usepackage{amssymb}
+
+% Define keywords command
+\providecommand{\keywords}[1]{\textbf{Palavras-chave:} #1}
      
 \sloppy
 
-\title{H-FedChain: Uma Arquitetura Hierárquica Edge–Fog–Cloud com Consenso Baseado em Blockchain para Federated Learning Seguro em IoHT}
+\title{H-FedChain: Uma Arquitetura Blockchain Hierárquica para Aprendizado Federado Verificável e Auditável em IoHT}
 
 \author{Adriano Zavareze Righi\inst{1} }
 
@@ -25,34 +30,85 @@ Universidade Do Vale Do Rio Dos Sinos (UNISINOS)\\
 
 \maketitle
 
-\begin{abstract}
-  The text follows the style of argumentative dissertation, containing two pages and     four paragraphs that are divided in: Introduction, first case, second case andvconclusion. The text model used was made available in the official domain of SBC (Sociedade Brasileira de Computação). The purpose of the text is to inform the author's opinion on two situations cited in Michael J. Sandel's book, "Justice -       What it is to do a certain thing", and explain its reasons.
-\end{abstract}
+% \begin{abstract}
+%   The text follows the style of argumentative dissertation, containing two pages and     four paragraphs that are divided in: Introduction, first case, second case andvconclusion. The text model used was made available in the official domain of SBC (Sociedade Brasileira de Computação). The purpose of the text is to inform the author's opinion on two situations cited in Michael J. Sandel's book, "Justice -       What it is to do a certain thing", and explain its reasons.
+% \end{abstract}
      
 \begin{resumo} 
-  O texto segue o estilo de dissertação argumentativa, contendo duas páginas e quatro   parágrafos que se dividem em introdução, primeiro caso, segundo caso e conclusão. O modelo de texto utilizado foi o disponibilizado no domínio oficial  da SBC(Sociedade Brasileira de Computação). O objetivo do texto é informar a  opinião do autor sobre duas situações citadas no livro “Justiça - o que   é fazer a coisa certa” de Michael J. Sandel, e explicar seus motivos.
+O aprendizado federado aplicado à saúde digital permite construir modelos colaborativos sem centralizar dados clínicos sensíveis produzidos por dispositivos de monitoramento e sensores de sinais vitais. Nesse contexto, preservar evidências sobre a origem e o processamento das contribuições é essencial para futuras auditorias e para decisões públicas fundamentadas em informações rastreáveis entre diferentes bairros e regiões. Entretanto, arquiteturas federadas tradicionais tratam a agregação das atualizações como uma etapa sustentada pela confiança implícita entre os participantes, tornando o processo vulnerável a contribuições adversariais e dificultando sua auditoria. Os trabalhos relacionados combinam \textit{blockchain}, agregação robusta e protocolos de consenso para reduzir esses riscos, mas não oferecem uma verificação integrada de ponta a ponta que contemple diferentes níveis geográficos e administrativos. Este trabalho propõe a H-FedChain, uma arquitetura hierárquica organizada nas camadas \textit{Edge}, \textit{Fog} e \textit{Cloud}, na qual o aprendizado federado representa o processo a ser protegido. Sua principal contribuição consiste em um pipeline que integra autenticação, filtragem robusta, provas zk-SNARK e zk-STARK, consenso HotStuff, eleição descentralizada de líderes e registro imutável em \textit{ledger} distribuído. A novidade está na composição desses mecanismos em uma única arquitetura capaz de produzir evidências verificáveis sobre a origem, a validação e a consolidação das atualizações em escalas intra-cluster e inter-regional, sem pressupor que a integridade do processamento assegure a correção clínica das leituras produzidas pelos sensores. O protótipo foi executado em contêineres Kubernetes, com rede emulada por tc-netem e até 400 dispositivos \textit{Edge} simulados em Python, utilizando registros de eletrocardiogramas do PTB-XL particionados de forma não homogênea. Nos cinco cenários avaliados, a H-FedChain alcançou 100\% de detecção de atualizações adversariais, verificação de provas, integridade do \textit{ledger} e rastreabilidade, sem divergência de estado entre réplicas, enquanto a latência média por rodada, obtida a partir de 5 execuções independentes por configuração, variou de 0,190 segundo no cenário nominal a 29,615 segundos na configuração de maior escala de dispositivos, com o custo de geração de provas criptográficas identificado como o principal fator de crescimento da latência sob escala.
+
+\keywords{aprendizado federado, blockchain, consenso Bizantino, provas de conhecimento zero, saúde digital.}
 \end{resumo}
 
 
 \section{Introdução}
 
-WIP
+O crescimento do volume de dados clínicos produzidos por dispositivos de monitoramento, sensores vestíveis e prontuários eletrônicos tem ampliado as possibilidades de acompanhamento da saúde da população. Em uma cidade conectada, sinais vitais coletados em diferentes bairros podem auxiliar prefeituras e órgãos de saúde a identificar tendências epidemiológicas, antecipar situações de risco e direcionar recursos públicos para as regiões com maior necessidade. Para que essas informações apoiem decisões dessa natureza, entretanto, sua origem e seu histórico de processamento devem ser verificáveis. Sem mecanismos de integridade, rastreabilidade e auditoria, gestores e comunidades podem questionar se os dados foram alterados, omitidos ou utilizados de maneira desigual, reduzindo a confiança nas políticas públicas formuladas a partir deles.
+
+Nesse cenário, dispositivos distribuídos entre residências, unidades básicas de saúde, clínicas e hospitais podem colaborar no treinamento de modelos capazes de identificar padrões clínicos sem transferir os dados dos pacientes para um repositório central. O aprendizado federado, formalizado por McMahan et al.~\cite{mcmahan2017communication} por meio do algoritmo \textit{Federated Averaging} (FedAvg), atende parcialmente a essa necessidade ao permitir que o treinamento utilize atualizações calculadas localmente por cada participante. Contudo, manter os dados em seus locais de origem não é suficiente para assegurar a confiabilidade do processo. É necessário verificar a procedência das atualizações, identificar contribuições inválidas ou maliciosas e preservar evidências que permitam reconstruir e auditar as decisões tomadas durante o treinamento.
+
+A aplicação desse modelo em uma rede pública, seja ela municipal, estadual ou federal, de saúde ilustra sua relevância. Cada bairro pode produzir dados relacionados a sinais vitais e às condições clínicas de sua população, enquanto unidades regionais consolidam essas informações para apoiar a construção de uma visão mais ampla da situação do município, por exemplo. Nesse contexto, a rastreabilidade permite verificar quais participantes contribuíram para cada resultado, como as atualizações foram validadas e de que forma foram agregadas. Isso oferece aos gestores e às comunidades evidências auditáveis de que os mesmos critérios foram aplicados a todas as regiões, reduzindo disputas sobre favorecimento, omissão ou manipulação de informações. Embora a arquitetura não possa assegurar que um sensor defeituoso represente corretamente a condição fisiológica de um paciente, ela pode garantir que os registros e as atualizações recebidos não sejam alterados silenciosamente ao longo do processamento e que sua trajetória permaneça disponível para auditorias futuras.
+
+A literatura tem procurado reduzir riscos dessa natureza por meio da combinação de \textit{blockchain}, utilizada como camada de registro imutável, com algoritmos de agregação robustos a participantes adversariais, como Krum e Multi-Krum~\cite{blanchard2017machine}. Protocolos de consenso bizantino tolerantes a falhas, como HotStuff~\cite{yin2019hotstuff}, têm sido empregados para coordenar participantes distribuídos, enquanto funções aleatórias verificáveis~\cite{micali1999verifiable} permitem realizar a eleição descentralizada de líderes. Provas de conhecimento zero, como Groth16~\cite{groth2016size} e zk-STARKs~\cite{ben2018scalable}, também possibilitam verificar determinadas propriedades de uma operação sem revelar as informações utilizadas em sua execução.
+
+Apesar desses avanços, as soluções existentes geralmente empregam esses mecanismos de maneira isolada ou protegem apenas uma etapa do aprendizado federado. Permanece a necessidade de uma arquitetura que conecte a validação das atualizações locais, a agregação realizada dentro de cada agrupamento de dispositivos e a consolidação entre diferentes regiões, preservando evidências verificáveis de todo o processo. Essa lacuna é particularmente relevante para redes públicas de saúde, nas quais diferentes bairros, instituições e níveis administrativos precisam colaborar sem depender de confiança irrestrita entre os participantes.
+
+Diante desse contexto, esse trabalho busca responder à seguinte questão de pesquisa: \textit{como estruturar um pipeline hierárquico de verificação que preserve a integridade, a proveniência, a auditabilidade e a rastreabilidade dos registros e das atualizações derivados de sinais vitais, permitindo sua consolidação entre diferentes bairros e regiões, com resiliência a participantes adversariais e latência compatível com aplicações de saúde pública?}
+
+Para responder a essa questão, esse artigo apresenta a H-FedChain, uma arquitetura hierárquica organizada nas camadas \textit{Edge}, \textit{Fog} e \textit{Cloud}. A proposta integra autenticação baseada em infraestrutura de chave pública, filtragem de contribuições adversariais, provas de conhecimento zero, consenso HotStuff, eleição descentralizada de líderes e registro imutável em um \textit{ledger} distribuído. Na arquitetura, o aprendizado federado representa o processo protegido, enquanto a contribuição central está no pipeline de segurança e auditabilidade que conecta suas diferentes etapas.
+
+A principal contribuição deste trabalho é definida como:
+
+\begin{itemize}
+    \item Dado um processo distribuído de coleta e agregação de atualizações derivadas de sinais vitais, propõe-se a H-FedChain, uma arquitetura hierárquica de segurança e auditabilidade que integra provas de conhecimento zero, consenso bizantino tolerante a falhas e registro imutável em \textit{ledger} distribuído. A arquitetura produz evidências verificáveis sobre a origem, a validação e a consolidação das contribuições em escalas local e regional, apoiando auditorias futuras e decisões de saúde pública fundamentadas em critérios rastreáveis e uniformes entre diferentes bairros.
+\end{itemize}
+
+Este artigo está organizado em sete seções. Após esta introdução, a Seção 2 apresenta os conceitos fundamentais necessários à compreensão da proposta. A Seção 3 discute os trabalhos relacionados e identifica as lacunas existentes. A Seção 4 descreve a arquitetura H-FedChain e seu pipeline de verificação. A Seção 5 apresenta a metodologia de avaliação, enquanto a Seção 6 discute os resultados e as limitações identificadas. Por fim, a Seção 7 reúne as conclusões e indica possibilidades para trabalhos futuros.
 
 \section{Conceitos Fundamentais}
 
+Nessa seção, será situado o leitor nos quatro pilares conceituais sobre os quais a arquitetura é construída. Cada um desses pilares carrega, isoladamente, décadas de maturação teórica e prática em comunidades de pesquisa distintas, redes e sistemas distribuídos, aprendizado de máquina, criptografia e sistemas de informação em saúde, e é precisamente na interseção entre eles que residem oportunidades e desafios que motivam esse trabalho. Aqui, pretende-se estabelecer o vocabulário técnico, as garantias formais e as limitações conhecidas que serão retomadas ao longo dos capítulos seguintes, sempre ancoradas nos trabalhos seminais que fundaram cada uma dessas áreas.
+
 \subsection{Internet of Health Things (IoHT)}
+
+A Internet das Coisas em Saúde (\textit{Internet of Health Things}, IoHT), designa o ecossistema de dispositivos conectados, sensores vestíveis, monitores clínicos, implantes ativos e equipamentos de diagnóstico, que capturam, processam e transmitem dados fisiológicos de forma contínua, com o propósito de subsidiar decisões clínicas em tempo próximo ao real \cite{rajagopal2024leveraging}. Trata-se de uma especialização da Internet das Coisas Médicas (IoMT) voltada especificamente para cenários de monitoramento de saúde em larga escala, incluindo telemedicina, monitoramente remoto de pacientes crônicos e vigilância epidemiológica em cidadades inteligentes.
+
+O que distingue a IoHT de outras aplicações de IoT não é apenas a natureza dos dados coletados, mas a severidade das consequências de sua má gestão. Um atraso de poucos segundos na detecção de uma arritmia cardíaca, ou a corrupção de uma leitura glicêmica, pode ter impacto direto sobre a vida do paciente, o que impõe requisitos de latência, disponibilidade e integridade substancialmente mais rígidos do que os tolerados em domínio como automação residencial ou logística. Esses requisitos são agravados pela heterogeneidade do parque de dispositivos IoHT: sensores de baixo vusto, com processadores de arquitetura ARM de poucos núcleos e memória da ordem de megabytes, convivem na mesma rede com \textit{gateways} hospitalares de maior capacidade computacional, o que impede a adoção uniforme de protocolos criptográficos ou de comunicação pensados para ambientes homogêneos \cite{awaisi2025hybrid}.
+
+Adicionalmente, os dados produzidos por dispositivos IoHT são, por definição legal, dados sensíveis. Legislações como a Lei Geral de Proteção de Dados (LGPD) no Brasil, o \textit{Health Insurance Portability and Accountability Act} (HIPAA) nos Estados Unidos e o \textit{General Data Protection Regulation} (GDPR) na União Européia impõem restrições severas sobre coleta, armazenamento e compartilhamento de informações clínicas, exigindo mecanismos técnicas de minimização de dados e de auditoria que vão muito além de simples controles de acesso. É justamente a combinação de criticidade temporal, heterogeneidade de recursos e exigência regulatória, que torna a IoHT um domínio de aplicação particularmente exigente para qualquer arquitetura distribuída de processamento de dados, e é nesse domínio que o presente se insere.
 
 \subsection{Federated Learning (FL)}
 
+O Federated Learning é um paradigma de aprendizado de máquina distribuído no qual múltiplos participantes colaboram no treinamento de um modelo global sem que seus dados brutos deixem os dispositivos onde foram gerados \cite{nguyen2022federated}, formalizado por McMahan et al. por meio do algoritmo \textit{Federated Averaging} (FedAvg) \cite{mcmahan2017communication}. A cada rodada, o servidor distribui os pesos do modelo global a um subconjunto de participantes, que treinam localmente e retornam apenas gradientes, agregados por média ponderada.
+
+Essa vantagem de privacidade é, contudo, apenas parcial: gradientes compartilhados podem ser explorados por ataques de inferência para reconstruir aproximações dos dados originais \cite{pfitzner2023flhealthcare}, e o FL clássico assume implicitamente boa-fé de todos os participantes, pressuposto precário em ambientes abertos e heterogêneos como redes hospitalares interconectadas, nos quais dispositivos podem estar comprometidos por falhas ou ataques deliberados de \textit{gradient poisoning} \cite{blanchard2017machine}. Essa vulnerabilidade justifica a incorporação de mecanismos de agregação robusta, como o Multi-Krum, capazes de identificar e descartar contribuições estatisticamente anômalas antes que comprometam o modelo agregado.
+
 \subsection{Blockchain}
+
+A tecnologia \textit{blockchain} constitui um registro distribuído, replicado entre múltiplos participantes de uma rede, no qual transações são organizadas em blocos encadeados criptograficamente, popularizada por Nakamoto no \textit{whitepaper} do Bitcoin \cite{nakamoto2008bitcoin}. O encadeamento por \textit{hashes} confere à blockchain sua propriedade mais importante, a imutabilidade retroativa: qualquer tentativa de alterar um bloco já confirmado invalida o encadeamento de todos os blocos subsequentes, tornando a adulteração computacionalmente detectável \cite{qammar2023securing}.
+
+Importa reter, para os fins deste trabalho, a distinção entre blockchain pública (\textit{permissionless}), na qual qualquer nó pode ingressar sem autorização prévia, e blockchain permissionada (\textit{permissioned}), na qual a participação é restrita a entidades previamente autenticadas por uma infraestrutura de identidade. Em domínios regulados como a saúde, blockchains permissionadas são preferíveis não apenas por razões de controle de acesso, mas também porque eliminam a necessidade de mecanismos de consenso computacionalmente dispendiosos, como a prova de trabalho \cite{wu2024scalable}.
 
 \subsection{Mecanismos de consenso em Blockchain}
 
+Se a blockchain fornece a estrutura de dados, o mecanismo de consenso é o que garante que todos os nós honestos da rede concordem sobre o estado dessa estrutura, mesmo na presença de participantes adversariais, problema formalizado pela tolerância a falhas Bizantinas (\textit{Byzantine Fault Tolerance}, BFT), cujo limite teórico estabelece que o acordo só é possível quando o número de nós fraudulentos é menor que 1/3.
+
+Castro e Liskov operacionalizam essa teoria com o \textit{Practical Byzantine Fault Tolerance} (PBFT) \cite{castro1999practical}, cujo custo de comunicação quadrático ($\mathcal{O}(n^2)$ por rodada) o torna inadequado para redes com dezenas ou centenas de nós, como é o caso de clusters Fog em implantações IoHT de médio e grande porte. Protocolos mais recentes, como o HotStuff \cite{yin2019hotstuff}, foram desenhados especificamente para linearizar essa comunicação, reduzindo a complexidade para $\mathcal{O}(n)$ por fase sem abrir mão das garantias formais de Castro e Liskov. Complementarmente, Funções Aleatórias Verificáveis (\textit{Verifiable Random Functions}, VRF) \cite{micali1999verifiable} endereçam a fragilidade dos esquemas de eleição de líder fixo ou rotativo, permitindo que cada nó compute, de forma determinística e verificável, um valor pseudoaleatório que elimina a necessidade de uma rodada de votação dedicada à eleição do líder.
+
 \subsection{Integração Blockchain e Federated Learning em IoHT}
+
+A combinação entre FL e blockchain surge de uma constatação relativamente simples, mas de consequências arquiteturais profundas. O FL resolve o problema de \textit{quem} pode ver os dados, mas não resolve o problema de \textit{como confiar} nas atualizações submetidas por participantes que o servidor coordenador não controla diretamente. Um servidor central de agregação FL, mesmo na formulação original de McMaham et al. \cite{mcmahan2017communication}, é, em última análise, um ponto único de falha e de confiança. Se este servidor estiver comprometido ou malicioso, pode manipular arbitrariamente o processo de agregação sem que os participantes tenham qualquer mecanismo de verificação independente. A blockchain, ao substituir esse coordenador único por um registro distribuído e replicado, sujeito a um protocolo de consenso auditável por todos os participantes, oferece uma via natural para mitigar esse risco.
+
+Essa integração, contudo, não é trivial nem isenta de problemas. A verificação de blocos e a execução de protocolos de consenso introduzem latência computacional que compete diretamente com os requisitos de tempo real da IoHT já discutidos anteriormente. A opção por registrar cada atualização de gradiente individualmente na blockchain, por exemplo, pode gerar um volume de transações incompatível com a capacidade de processamento de nós Fog com recursos limitados, ao passo que agregações excessivamente esparsas comprometem a granularidade da auditoria. Da mesma forma, a transparência inerente a muitas implementações de blockchain, desejável para fins de auditoria, pode conflitar com a exigência de que gradientes de modelos treinados sobre dados clínicos não revelem, ainda que indiretamente, informações sensíveis sobre os pacientes envolvidos.
+
+É precisamente nesse espaço de tensão entre auditabilidade, desempenho e privacidade que provas de conhecimento zero (\textit{Zero-Knowledge Proofs}, ZKP) emergem como peça complementar dessa integração. O conceito de ZKP foi introduzido por Goldwasser, Micali e Rackoff \cite{goldwasser1985knowledge}, em um dos artigos fundacionais da criptografia moderna, que formaliza as três propriedades que uma prova desse tipo deve satisfazer: completude, garantindo que o verificador aceite uma afirmação verdadeira; solidez, garantindo que nenhum gerador de prova desonesto consiga convencer o verificador de uma afirmação falsa; e a própria propriedade de conhecimento zero, que assegura que nenhuma informação além da validade da afirmação seja revelada ao verificador. Esquemas modernos derivados desse resultado teórico, como zk-SNARK e zk-STARK, permitem que um participante demonstre criptograficamente que uma computação foi executada corretamente, por exemplo, que um gradiente local respeita um limiar de norma predefinido, ou que uma agregação foi calculada sobre um conjunto específico de contribuições válidas, sem revelar os dados subjacentes a essa computação. Isso permite que uma camada superior da arquitetura, como um nó Fog ou a própria nuvem, verifique a integridade do processo de treinamento sem jamais ter acesso aos dados clínicos ou mesmo aos gradientes brutos dos dispositivos de origem, reconciliando as exigências aparentemente conflitantes de auditabilidade regulatória e de preservação de privacidade formalizadas por Goldwasser, Micla e Rackoff \cite{goldwasser1985knowledge} há quatro décadas.
+
+A convergência dos quatro pilares, que são os requisitos operacionais e regulatórios da IoHT, as garantias e vulnerabilidades do aprendizado federado formalizadas por McMaham et al. \cite{mcmahan2017communication}, as propriedades de imutabilidade e replicação da blockchain propostas por Nakamoto \cite{nakamoto2008bitcoin}, e os mecanismos de consenso e prova criptográfica que sustentam a confiança distribuída, alicerçados nos resultados seminais de Castro e Liskov \cite{castro1999practical} e de Goldwasser, Micale e Rackoff \cite{goldwasser1985knowledge}, delimita precisamente o espaço de projeto no qual esse trabalho é concebido.
+
 
 \section{Trabalhos Relacionados}
 
-Essa seção apresenta uma revisão crítica e estruturada da literatura científica sobre mecanismos de consenso em arquiteturas de aprendizado federado distribuído para saúde no contexto de cidades inteligentes (IoMT/IoHT). A revisão está organizada em subseções que contextualizam o estado da arte, agrupam as abordagens metodológicas identificadas, analisam criticamente convergências, divergências, lacunas e fragilidades, e posicionam a contribuição do presente trabalho.
+Essa seção apresenta uma revisão crítica e estruturada da literatura científica sobre mecanismos de consenso em arquiteturas de aprendizado federado distribuído para saúde no contexto de cidades inteligentes e IoHT. A revisão está organizada em subseções que contextualizam o estado da arte, agrupam as abordagens metodológicas identificadas, analisam criticamente convergências, divergências, lacunas e fragilidades, e posicionam a contribuição do presente trabalho.
 
 \subsection{Estratégia de Busca}
 
@@ -60,7 +116,7 @@ A estratégia de busca foi definida com o objetivo de identificar estudos que in
 
 \subsubsection{Strings de Busca Utilizadas}
 
-As seguintes combinações booleanas foram utilizadas nas bases acadêmicas:
+As \textit{strings} de busca foram construídas de forma incremental, partindo dos quatro pilares conceituais discutidos na Seção~2 (IoHT, Federated Learning, blockchain e consenso) e combinando-os por meio de operadores booleanos, de modo a capturar tanto trabalhos que tratam da interseção completa entre esses temas quanto variações terminológicas identificadas em uma busca exploratória preliminar, por exemplo, IoMT como sinônimo parcial de IoHT, ou nomes de \textit{frameworks} específicos como FedHealthFog e FLCoin, encontrados já em uma primeira rodada de leitura de resumos. As seguintes combinações foram utilizadas nas bases acadêmicas:
 
 \begin{enumerate}
     \item \texttt{"blockchain" AND "federated learning" AND "healthcare" AND ("IoT" OR "IoMT") AND ("edge" OR "fog") AND "consensus protocol"}
@@ -85,7 +141,7 @@ Para restringir a busca a estudos recentes e alinhados ao escopo deste trabalho,
 \toprule
 \textbf{Critério} & \textbf{Parâmetro} \\
 \midrule
-\textbf{Período} & 2020--2026 \\
+\textbf{Período} & 2020-2026 \\
 \midrule
 \textbf{Tipo de publicação} & Artigos revisados por pares com DOI válido \\
 \midrule
@@ -171,155 +227,50 @@ Do ponto de vista de segurança e privacidade, os trabalhos analisados evidencia
 
 Finalmente, estudos de natureza mais conceitual, como os de Kamruzzaman et al. e Alam et al., reforçam a pertinência de combinar fog computing, IoMT e blockchain para aplicações de saúde em cidades inteligentes, mas não avançam para a definição de um protocolo de consenso que considere simultaneamente requisitos de latência, energia, confiabilidade e dinâmica do aprendizado federado \cite{kamruzzaman2022,alam2022}. Esse panorama indica que, embora existam contribuições relevantes em cada um dos eixos (arquiteturas edge–fog–cloud, aprendizado federado em saúde, blockchain como plano de confiança e protocolos de consenso leves ou adaptativos), ainda é raro encontrar soluções que integrem de forma coesa todos esses elementos no contexto específico de IoMT/IoHT urbano.
 
-Diante dessas observações, o presente trabalho se posiciona no espaço de interseção entre aprendizado federado, IoMT/IoHT e blockchain, com foco no desenho de um protocolo de consenso, diretamente no plano de controle da rede fog, adaptado às particularidades de ambientes de saúde em cidades inteligentes. Em termos gerais, busca-se conceber um mecanismo de consenso em blockchain capaz de: (i) operar de forma eficiente em arquiteturas hierárquicas edge–fog–cloud, (ii) considerar explicitamente as restrições de recursos e requisitos de latência típicos de dispositivos e gateways médicos, e (iii) alinhar-se ao ciclo de agregação de modelos do aprendizado federado, de forma a reduzir overhead de comunicação e aumentar a robustez frente à heterogeneidade e dinâmica da IoMT. A partir da análise crítica dos trabalhos, conclui-se que essa combinação ainda não foi plenamente explorada, o que evidencia uma lacuna concreta na literatura e fundamenta a relevância da arquitetura de consenso em blockchain proposta nesse trabalho para o suporte ao aprendizado federado em ambientes de IoMT/IoHT.
+Diante dessas observações, o presente trabalho propõe um pipeline hierárquico de verificação e registro que compõe HotStuff, VRF, Multi-Krum e ZKP para produzir evidências auditáveis fim-a-fim no ciclo FL em IoHT, adaptado às particularidades de ambientes de saúde em cidades inteligentes. Em termos gerais, busca-se conceber um mecanismo de consenso em blockchain capaz de: (i) operar de forma eficiente em arquiteturas hierárquicas edge–fog–cloud, (ii) considerar explicitamente as restrições de recursos e requisitos de latência típicos de dispositivos e gateways médicos, e (iii) alinhar-se ao ciclo de agregação de modelos do aprendizado federado, de forma a reduzir overhead de comunicação e aumentar a robustez frente à heterogeneidade e dinâmica da IoMT. A partir da análise crítica dos trabalhos, conclui-se que essa combinação ainda não foi plenamente explorada, o que evidencia uma lacuna concreta na literatura e fundamenta a relevância da arquitetura de consenso em blockchain proposta nesse trabalho para o suporte ao aprendizado federado em ambientes de IoHT.
 
 \section{Modelo H-FedChain}
 
-A integração entre tecnologias de \textit{Federated Learning}~(FL) e infraestruturas de blockchain permissionada em ambientes distribuídos de saúde digital tem recebido crescente atenção da comunidade científica, principalmente diante das exigências de privacidade impostas pela LGPD (BR), HIPAA (USA) e GDPR (UE). Apesar dos avanços recentes, a literatura ainda apresenta lacunas na definição de arquiteturas capazes de integrar, de forma sistemática, o treinamento colaborativo distribuído, a rastreabilidade imutável e a verificação criptográfica \textit{end-to-end} em um único modelo operacional voltado para dispositivos de Internet das Coisas Médicas (IoMT).
+A integração entre tecnologias de \textit{Federated Learning} (FL) e infraestruturas de \textit{blockchain} permissionada em ambientes distribuídos de saúde digital tem recebido crescente atenção da comunidade científica, sobretudo diante das exigências de privacidade impostas pela LGPD (BR), HIPAA (EUA) e GDPR (UE). Apesar dos avanços recentes, a literatura ainda carece de arquiteturas capazes de integrar, de forma sistemática, o treinamento colaborativo distribuído, a rastreabilidade imutável e a verificação criptográfica \textit{end-to-end} em um único modelo operacional voltado a dispositivos de Internet das Coisas na Saúde (IoHT).
 
-Nesse trabalho é proposta a arquitetura \textbf{H-FedChain} (\textit{Hierarchical Federated Chain}), um modelo distribuído multicamadas desenvolvido para suportar treinamento federado com preservação de privacidade em ambientes IoMT. A visão geral da arquitetura proposta é apresentada na Figura~\ref{fig:hfedchain_architecture}.
+Propõe-se, nesse trabalho, a arquitetura H-FedChain (\textit{Hierarchical Federated Chain}), um modelo distribuído multicamadas concebido para suportar treinamento federado com preservação de privacidade em ambientes IoHT. A arquitetura é estruturada sobre três pilares: (i) organização hierárquica em camadas verticais com responsabilidades computacionais proporcionais à capacidade de cada nível; (ii) uso do Federated Learning como mecanismo de treinamento sem compartilhamento de dados clínicos; e (iii) adoção de blockchain permissionada com consenso distribuído tolerante a falhas como base para rastreabilidade e auditabilidade.
 
-\begin{figure}[ht!]
-    \label{fig:hfedchain_architecture}
-    \centering
-    \includegraphics[width=\textwidth]{./images/H-FedChain-Architecture.png}
-    \caption{Arquitetura hierárquica da H-FedChain e seus componentes distribuídos.}
-\end{figure}
-
-A arquitetura é estruturada sobre três pilares principais: (i)~organização \textbf{hierárquica} em camadas verticais com responsabilidades computacionais proporcionais; (ii)~uso de \textbf{Federated Learning} como mecanismo de treinamento sem compartilhamento de dados clínicos; e (iii)~adoção de \textbf{blockchain permissionada} com consenso distribuído tolerante a falhas como base para rastreabilidade e auditabilidade.
-
-Essa seção está organizada da seguinte forma. A Subseção~\ref{sec:decisoes} apresenta as decisões de projeto e suas justificativas técnicas. A Subseção~\ref{sec:descricao} descreve os componentes arquiteturais e as camadas do sistema.
+Essa seção está organizada em três subseções que dialogam entre si: a Subseção~\ref{subsec:decisoes} justifica por que a arquitetura foi desenhada dessa maneira, isto é, as decisões de projeto propriamente ditas, ancoradas nas restrições do domínio; a Subseção~\ref{subsec:arquitetura} apresenta o que compõe a arquitetura, ou seja, sua estrutura hierárquica, camadas e componentes; e a Subseção~\ref{subsec:funcionamento} descreve como o sistema opera de fato, demonstrando o funcionamento passo a passo de uma rodada de treinamento, incluindo os mecanismos de eleição de líder e consenso.
 
 \subsection{Decisões de Projeto}
-\label{sec:decisoes}
+\label{subsec:decisoes}
 
-O projeto da H-FedChain é orientado por quatro restrições fundamentais do domínio de saúde digital:
+O projeto da H-FedChain é orientado por quatro restrições fundamentais do domínio de saúde digital: (1) privacidade de dados clínicos, que impõe que nenhum dado bruto seja transmitido para fora do dispositivo de origem; (2) recursos restritos em dispositivos IoHT, que tornam inviável a execução de protocolos intensivos na camada periférica; (3) participantes potencialmente desonestos, dado que dispositivos médicos e redes hospitalares estão sujeitos a falhas e comportamento adversarial; e (4) auditabilidade regulatória, que exige trilhas imutáveis para todo o ciclo de processamento de dados e modelos.
 
-\begin{enumerate}
-  \item \textbf{Privacidade de dados clínicos}: dados de pacientes estão sujeitos a proteção legal obrigatória, exigindo que nenhum dado bruto seja transmitido para fora do dispositivo de origem;
-  \item \textbf{Recursos restritos em dispositivos IoMT}: sensores e monitores médicos operam com severas limitações computacionais e energéticas, tornando inviável a execução de protocolos intensivos na camada periférica;
-  \item \textbf{Participantes potencialmente desonestos}: dispositivos médicos e redes hospitalares são ambientes sujeitos a falhas, desconexões e comportamento potencialmente adversarial;
-  \item \textbf{Auditabilidade regulatória}: legislações da área da saúde exigem trilhas de auditoria imutáveis para todo o ciclo de processamento de dados clínicos e modelos.
-\end{enumerate}
-
-A partir dessas restrições, foram estabelecidas as seguintes decisões de projeto.
-
-\subsubsection{Separação Vertical em Camadas Hierárquicas}
-
-A organização em três camadas verticais, Edge, Fog e Cloud, permite distribuir responsabilidades computacionais de forma proporcional à capacidade de cada nível, evitando tanto a sobrecarga dos dispositivos periféricos quanto a centralização excessiva na nuvem~~\cite{rajagopal2024leveraging,awaisi2025hybrid}. Essa organização permite escalar cada nível independentemente e limitar o impacto de falhas ao escopo da camada afetada.
-A camada Fog é utilizada como intermediária para absorver grande parte da carga de validação e agregação, reduzindo latência e volume de dados transmitidos para a nuvem.
-A camada Cloud possui papel propositalmente restrito à verificação e orquestração do sistema, não atuando como repositório de dados clínicos, em conformidade com o princípio de minimização de dados.
-
-\subsubsection{Federated Learning como Paradigma de Treinamento}
-
-O FL foi adotado como paradigma central por permitir a otimização colaborativa de um modelo global sem que os participantes tenham acesso aos dados privados uns dos outros, transmitindo apenas gradientes calculados localmente~\cite{nguyen2022federated,pfitzner2023flhealthcare}. A cada rodada $t$, cada dispositivo Edge recebe os pesos do modelo global $w^{(t)}$ e computa o gradiente local $\Delta w_i$ sobre sua base de dados clínica privada, sem transmitir nenhum dado bruto.
-
-Entretanto, o FL clássico apresenta vulnerabilidade a ataques de \textit{gradient poisoning}, nos quais participantes maliciosos submetem atualizações adulteradas com o objetivo de comprometer o modelo global. Essa vulnerabilidade justifica a utilização de algoritmos de agregação robusta Multi-Krum~\cite{blanchard2017machine}, aplicados na camada Fog antes de qualquer confirmação de bloco, permitindo tolerar formalmente até $f < n/3$ participantes maliciosos entre $n$ contribuintes ~\cite{awaisi2025hybrid,rajagopal2025ai}.  O Multi-Krum seleciona os $m = n - f$ gradientes com menor soma de distâncias euclidianas mútias, onde $n$ é o número total de contribuintes e $f < n/3$ o limite de participantes maliciosos toleráveis, garantindo robustez formal contra ataques coordenados. A escolha do Multi-Krum em detrimento do Trimmed Mean, é motivada pela sua robustez superios em cenários \textit{non-IID} e contra ataques concentrados, condição frequente em redes hospitalares comprometidas.
-
-\subsubsection{Blockchain Permissionada na Camada Fog}
-
-A decisão de posicionar a blockchain na camada Fog, e não na Cloud como observado em trabalhos correlatos~\cite{wu2024scalable,rajagopal2024leveraging}, é motivada por três fatores:
-(i)~\textbf{latência}, uma vez que a confirmação de blocos deve ocorrer próxima à origem dos dados para satisfazer os requisitos de tempo real de aplicações IoMT;
-(ii)~\textbf{descentralização de confiança}, evitando ponto único de controle na nuvem; e
-(iii)~\textbf{verificabilidade local}, permitindo que cada cluster mantenha auditoria independente sobre seu histórico de modelos regionais.
-
-A utilização de blockchain permissionada em detrimento de blockchain pública é justificada pela possibilidade de controle de acesso baseado em identidade (PKI) e pela eliminação do elevado custo energético associado a mecanismos de consenso baseados em prova de trabalho, inadequados para nós Fog com recursos limitados~\cite{wu2024scalable}. Cada cluster Fog mantém seu próprio ledger replicado entre todos os Fog Nodes do cluster, garantindo que a integridade dos dados não dependa de um servidor central. A imutabilidade retroativa é assegurada pelo encadeamento de hashes: cada bloco registra o hash do bloco anterior, tornando qualquer adulteração computacionalmente inviável~\cite{qammar2023securing}.
-
-\subsubsection{Protocolo de Consenso HotStuff BFT}
-
-A H-FedChain adota o protocolo \textbf{HotStuff} como mecanismo de consenso distribuído tolerante a falhas Bizantinas (\textit{Byzantine Fault Tolerance}, BFT), operando em dois níveis: intra-cluster e inter-cluster (inter-regional). O HotStuff foi selecionado em detrimento do PBFT clássico por usa complexidade de mensagens $\mathcal{O}(n)$ por fase, em contraste com $\mathcal{O}(n^2)$ do PBFT, o que o torna escalável para clusters com dezenas de nós Fog.
-
-O protocolo executa três fases sequenciais: \textbf{PREPARE}, \textbf{PRE-COMMIT} e \textbf{COMMIT}. Em cada fase, o líder coleta votos dos nós participantes e, ao atingir o quórum $\lceil 2n/3 \rceil + 1$, agrega as assinaturas em um \textit{Quorum Certificate} (QC), que serve como pré-requisito para a fase seguinte. O QC\_COMMIT, emitido ao final da fase COMMIT, é o gatilho que autoriza cada Ledger Peer a persistir o bloco em seu ledger local.
-
-A tolerância a falhas garante operação correta na presença de até $f < n/3$ nós Bizantinos. Em caso de falha do líder, o protocolo executa automaticamente um \textit{view-change}, promovendo o próximo candidato eleito pelo mecanismo VRF, descrito na Seção~\ref{sec:vrf}, sem interromper a operação do cluster.
-
-\subsubsection{Eleção de Líder por VRF}
-\label{sec:vrf}
-
-A eleição do líder de consenso em cada rodada é realizada por meio de uma \textbf{Função Aleatória Verifiável} (\textit{Verificable Random Function}, VRF) eliminando o papel de representante fixo e o consequente ponto único de falha (SPOF). O protocolo de eleição opera da seguinte forma:
+A partir dessas restrições, quatro decisões estruturais foram tomadas, cada uma delas resolvendo um problema específico de projeto:
 
 \begin{enumerate}
-\item \textbf{Semente compartilhada}: ao início da rodada $t$, todos os nós derivam determinísticamente a semente $s_t = {hash}(B_{t-1})$, onde $(B_{t-1})$ é o hash do último bloco confirmado no ledger do cluster;
-\item \textbf{Cálculo local}: cada nó $j$ computa indepementemente o par 
-\[
-(y_j,\; \pi_j^{{vrf}}) \leftarrow {VRF.Eval}(sk_j,\; s_t),
-\]
-onde $sk_j$ é sua chave privada PKI, $y_j \in \{0,1\}^{256}$ é a saída pseudoaleatória e $\pi_j^{{vrf}}$ é a prova de corretude que permite a qualquer observador verificar que $y_j$ foi calculado corretamente. Em seguida, o nó difunde o triplo $(j,\; y_j,\; \pi_j^{{vrf}})$ para todos os pares do cluster;
-\item \textbf{Seleção}: cada nó coleta os triplos dos demais participantes durante o intervalo ${TIMEOUT\_VRF}$ e forma o conjunto de candidatos válidos. O líder da rodada é determinado como:
-\[
-{L\'{\i}der}_t = \arg\min_{j \in \mathcal{V}} \{ y_j \mid {VRF.Verify}(vk_j,\; s_t,\; y_j,\; \pi_j^{{vrf}}) = \top \},
-\]
-onde $\mathcal{V}$ é o conjunto de nós com provas válidas e $vk_j$ é a chave pública do nó $j$ registrada na PKI. A seleção é determinística: dado o mesmo conjunto de triplos válidos, todos os nós chegam ao mesmo resultado independentemente; e
-\item \textbf{Verificação}: qualquer nó do cluster pode verificar a legitimidade do líder eleito executando ${VRF.Verify}(vk_{{l\'{\i}der}}, s_t, y_{{l\'{\i}der}}, \pi_{{l\'{\i}der}}^{{vrf}}) = \top$ usando a chave pública $vk_{{l\'{\i}der}}$ registrada na PKI, sem necessidade de votação adicional. Em caso de falha do líder eleito, como timeout detectado pelos demais nós, o HotStuff aciona o mecanismo de \textit{view-change}, promovendo automaticamente o nó com segundo menor $y_j$ como líder substituto.
+    \item \textbf{Separação vertical em camadas hierárquicas (Edge–Fog–Cloud).} Distribuir responsabilidades computacionais proporcionalmente à capacidade de cada nível evita simultaneamente a sobrecarga dos dispositivos periféricos e a centralização excessiva na nuvem, permitindo escalar cada camada de forma independente e confinar o impacto de falhas ao escopo da camada afetada.
+
+    \item \textbf{Federated Learning como paradigma de treinamento.} A adoção do FL, em detrimento de arquiteturas centralizadas, decorre diretamente da restrição de privacidade: apenas gradientes calculados localmente circulam pela rede, nunca os dados clínicos. Essa escolha é complementada pela agregação robusta via Multi-Krum na camada Fog, necessária porque o FL clássico pressupõe boa-fé dos participantes, pressuposto incompatível com a restrição (3).
+
+    \item \textbf{Blockchain permissionada posicionada na camada Fog, e não na Cloud.} A decisão de aproximar o registro imutável da origem dos dados, em vez de centralizá-lo na nuvem, como em trabalhos correlatos, é motivada por três fatores: latência (a confirmação de blocos precisa ocorrer próxima à origem para atender requisitos de tempo real), descentralização de confiança (evita-se um ponto único de controle) e verificabilidade local (cada cluster mantém auditoria independente). O caráter permissionado, por sua vez, elimina o custo energético de mecanismos como prova de trabalho, inadequados a nós Fog com recursos limitados.
+
+    \item \textbf{Consenso HotStuff BFT em dois níveis (intra e inter-cluster).} Em substituição a variantes clássicas de PBFT, o HotStuff foi escolhido por reduzir a complexidade de mensagens de $O(n^2)$ para $O(n)$ por fase, tornando o consenso escalável para clusters com dezenas de nós Fog sem abrir mão das garantias formais de segurança e vivacidade da tolerância a falhas Bizantinas.
 \end{enumerate}
 
-O Algoritmo~\ref{alg:vrf} formaliza o protocolo completo de eleição,
-incluindo o mecanismo de \textit{fallback} por \textit{view-change}.
-
-\begin{algorithm}[ht!]
-\caption{VRF Leader Election — Rodada $t$}
-\label{alg:vrf}
-\begin{algorithmic}[1]
-\Require $B_{t-1}$: hash do último bloco; $sk_j, vk_j$: chaves PKI do nó $j$;
-         $\mathit{VK}[]$: chaves públicas dos pares; $\mathit{TIMEOUT\_VRF}$
-\Ensure  $\mathrm{Leader}_t$: identificador do líder eleito
-
-\State $s_t \leftarrow \mathrm{hash}(B_{t-1})$
-\State $(y_j,\, \pi_j^{\mathrm{vrf}}) \leftarrow \mathrm{VRF.Eval}(sk_j,\, s_t)$
-\State \textbf{broadcast}$(j,\, y_j,\, \pi_j^{\mathrm{vrf}})$
-\State $\mathit{candidates} \leftarrow \{(j, y_j)\}$
-\State \textbf{wait} $\mathit{TIMEOUT\_VRF}$ \textbf{for} mensagens $(k, y_k, \pi_k^{\mathrm{vrf}})$
-\ForAll{$(k, y_k, \pi_k^{\mathrm{vrf}})$ recebido}
-  \If{$\mathrm{VRF.Verify}(vk_k,\, s_t,\, y_k,\, \pi_k^{\mathrm{vrf}}) = \top$}
-    \State $\mathit{candidates} \leftarrow \mathit{candidates} \cup \{(k, y_k)\}$
-  \Else
-    \State $\mathrm{log.audit}(\textsc{rejected},\, k,\, t)$
-  \EndIf
-\EndFor
-\State $(\mathrm{Leader}_t, \_) \leftarrow \arg\min_{(k,y_k) \in \mathit{candidates}} y_k$
-\If{$\mathrm{Leader}_t \neq \mathrm{self}$ \textbf{and} $\mathrm{timeout}(\mathrm{Leader}_t)$}
-  \State $\mathit{candidates} \leftarrow \mathit{candidates} \setminus \{(\mathrm{Leader}_t, \_)\}$
-  \State $(\mathrm{Leader}_t, \_) \leftarrow \arg\min_{(k,y_k) \in \mathit{candidates}} y_k$
-\EndIf
-\State \Return $\mathrm{Leader}_t$
-\end{algorithmic}
-\end{algorithm}
-
-\subsubsection{Infraestrutura de Chave Pública e Execução Confiável}
-
-A adoção de uma PKI hierárquica como base de identidade decorre da necessidade de autenticar dispositivos heterogêneos em larga escala, permitindo revogação eficiente de credenciais comprometidas~\cite{tahir2026decentralized}. Dispositivos Edge recebem certificados digitais emitidos pela Autoridade Certificadora (CA) raiz gerenciada pelo Global Identity Service na camada Cloud.
-
-\subsubsection{Provas Criptográficas Diferenciadas por Camada}
-
-A inserção de provas criptográficas em cada transição de camada permite que uma camada superior verifique a veracidade das operações executadas em uma camada inferior sem acessar os dados subjacentes, em alinhamento com o paradigma de provas de conhecimento zero (\textit{Zero-Knowledge Proofs}, ZKP).
-
-O H-FedChain adota sistemas ZKP distintos em cada camada, calibrados de acordo com os recursos disponíveis e os requisitos de verificação. Na Edge, adota-se \textbf{zk-SNARK}: provas de $\approx 384$~bytes, tempo de geração de $\approx 55$~ms em ARM64~\cite{zksnarkstark2025}, verificação em $< 5$~ms, compatíveis com o ciclo de treinamento de dispositivos IoMT. Nas camadas Fog e superiores, adota-se \textbf{zk-STARK}~\cite{zksnarkstark2025}: transparente (sem \textit{trusted setup}), resistente a computação pós-quântica, provas de $\approx 68$~KB, verificação em $\approx 472$~ms em hardware de servidor, e escalabilidade para traços de execução iterativa sobre conjuntos de gradientes de tamanho variável.
-
-A escolha de zk-STARK na Fog implica um overhead de verificação de $\approx 472$~ms por rodada. Em ambientes IoMT, o ciclo médio de treinamento FL varia entre 30 e 120 segundos por rodada~\cite{nguyen2022federated}, tornando esse overhead inferior a 2\% do tempo total da rodada e, portanto, aceitável sem comprometer o desempenho geral. A Tabela~\ref{tab:zkp} resume as escolhas.
-
-\begin{table}[htbp]
-\caption{Sistemas ZKP por Camada na H-FedChain}
-\label{tab:zkp}
-\centering
-\begin{tabular}{@{}lllp{5cm}@{}}
-\toprule
-\textbf{Camada} & \textbf{Esquema} & \textbf{Prova} & \textbf{Justificativa} \\
-\midrule
-Edge                & zk-SNARK & $\approx 384$~B & Compacto; rápido em ARM64 ($\approx 55$~ms); verificação $< 5$~ms \\
-Fog Regional        & zk-STARK           & $\approx 68$~KB & Sem trusted setup; itera sobre $n$ gradientes; pós-quântico \\
-Fog Inter-Regional  & zk-STARK           & $\approx 68$~KB & Transparente; verificável pela Cloud sem dados privados \\
-Cloud               & zk-STARK (verif.)  & -               & Verificação rápida ($\approx 472$~ms); sem acesso a dados clínicos \\
-\bottomrule
-\end{tabular}
-\end{table}
+Essas quatro decisões definem o esqueleto estrutural da H-FedChain. Os mecanismos operacionais que as viabilizam concretamente, a saber, o protocolo de eleição de líder, o encadeamento de provas criptográficas por camada e o ciclo completo de uma rodada, são tratados separadamente, respectivamente nas Subseções~\ref{subsec:arquitetura} e~\ref{subsec:funcionamento}, de modo a preservar aqui o caráter conciso e justificativo próprio de uma seção de decisões de projeto.
 
 % ------------------------------------------------------------
-\subsection{Componentes Arquiteturais}
-\label{sec:descricao}
+\subsection{Arquitetura}
+\label{subsec:arquitetura}
 
-A H-FedChain é organizada em uma topologia composta por três camadas verticais de processamento e três camadas transversais de suporte. O eixo vertical define o escopo funcional de cada nível, enquanto o eixo transversal projeta atributos não funcionais relacionados à segurança, observabilidade e persistência de maneira uniforme sobre toda a arquitetura. A seguir, são descritos os componentes de cada camada, suas entradas, saídas e papel funcional na arquitetura.
+A Figura~\ref{fig:hfedchain_architecture} apresenta a visão geral da arquitetura H-FedChain e de seus componentes distribuídos. Estruturalmente, o sistema é organizado em uma topologia composta por três camadas verticais de processamento, Edge, Fog e Cloud, e três camadas transversais de suporte, responsáveis por atributos não funcionais projetados de maneira uniforme sobre toda a arquitetura: segurança e identidade, observabilidade e armazenamento.
 
-\subsubsection{Camada 0 - Edge: Dispositivos IoMT}
+\begin{figure}[ht!]
+    \centering
+    \includegraphics[width=\textwidth]{./imagens/H-FedChain-Architecture.png}
+    \caption{Arquitetura hierárquica da H-FedChain e seus componentes distribuídos.}
+    \label{fig:hfedchain_architecture}
+\end{figure}
+
+
+\subsubsection{Camada 0 - Edge: Dispositivos IoHT}
 
 A camada Edge é composta por dispositivos médicos heterogêneos, incluindo sensores de ECG, monitores de glicose, \textit{wearables} de pressão arterial, câmeras de diagnóstico, oxímetros~SpO$_2$ e sensores de temperatura. Esses dispositivos constituem a única fonte de dados brutos na arquitetura, ou seja, nenhum dado de paciente trafega para além dessa camada, garantindo a preservação da privacidade.
 
@@ -350,7 +301,7 @@ A camada Fog é organizada em \textit{clusters} independentes, cada um associado
 
 A saída desta fase é a tupla $(\Delta g_j,\, L_j^{{ac}},\, L_j^{{rej}},\, t)$, onde $L_j^{{ac}}$ é a lista de dispositivos aceitos e $L_j^{{rej}}$ a lista de rejeitados na rodada $t$.
 
-\paragraph{Fase 2 - Eleição do Líder por VRF:} Ao início da rodada, todos os Fog Nodes derivam e semente $s_t = {hash}(B_{t-1})$ e executam o protocolo VRF descrito na Seção~\ref{sec:vrf}. O nó com menor $y_j$ válido assume o papel de líder da rodada, papel esse verificável por qualquer nó via PKI sem votação adicional.
+\paragraph{Fase 2 - Eleição do Líder por VRF:} Ao início da rodada, todos os Fog Nodes derivam e semente $s_t = {hash}(B_{t-1})$ e executam o protocolo VRF. O nó com menor $y_j$ válido assume o papel de líder da rodada, papel esse verificável por qualquer nó via PKI sem votação adicional.
 
 \paragraph{Fase 3 - Agregação Inter-Nós e Consenso:} O líder coleta os gradientes $\{\Delta g_j\}_{j=1}^{n}$ de todos os Fog Nodes do cluster e executa Multi-Krum inter-nós, obtendo o gradiente regional $\Delta w^{{reg}}$. Em seguida, o líder inicia o protocolo HotStuff BFT:
 
@@ -374,7 +325,7 @@ A prova $\pi^{{reg}}$ atesta que a agregação foi executada corretamente e que 
 B_t = \bigl\{\,{hash}(\Delta w^{{reg}}),\; \pi^{{reg}},\; {QC\_COMMIT},\; L^{{ac}},\; L^{{rej}},\; t,\; {timestamp},\; {hash}(B_{t-1})\,\bigr\}
 \]
 
-Cada \textbf{Ledger} recebe $B_t$, valida independentemente o QC\_COMMIT verificando as assinaturas dos vontantes, e somente etão persiste o $B_t$ em seu ledger local. O ledger resultante é idêntico e replicado em todos os nós do cluster, sem dependência de escrita centralizada.
+Cada \textbf{Ledger} recebe $B_t$, valida independentemente o QC\_COMMIT verificando as assinaturas dos votantes, e somente então persiste o $B_t$ em seu ledger local. O ledger resultante é idêntico e replicado em todos os nós do cluster, sem dependência de escrita centralizada.
 
 A saída enviada pelo cluster para a camada Inter-Regional é:
 
@@ -384,6 +335,35 @@ A saída enviada pelo cluster para a camada Inter-Regional é:
 
 O Algoritmo~\ref{alg:fog_round} integra as quatro fases da rodada intra-cluster, evidenciando as condições de rejeição em cada etapa e o encadeamento entre verificação, agregação robusta, consenso BFT
 e persistência no ledger.
+
+\begin{algorithm}[ht!]
+\caption{VRF Leader Election — Rodada $t$}
+\label{alg:vrf}
+\begin{algorithmic}[1]
+\Require $B_{t-1}$: hash do último bloco; $sk_j, vk_j$: chaves PKI do nó $j$;
+         $\mathit{VK}[]$: chaves públicas dos pares; $\mathit{TIMEOUT\_VRF}$
+\Ensure  $\mathrm{Leader}_t$: identificador do líder eleito
+
+\State $s_t \leftarrow \mathrm{hash}(B_{t-1})$
+\State $(y_j,\, \pi_j^{\mathrm{vrf}}) \leftarrow \mathrm{VRF.Eval}(sk_j,\, s_t)$
+\State \textbf{broadcast}$(j,\, y_j,\, \pi_j^{\mathrm{vrf}})$
+\State $\mathit{candidates} \leftarrow \{(j, y_j)\}$
+\State \textbf{wait} $\mathit{TIMEOUT\_VRF}$ \textbf{for} mensagens $(k, y_k, \pi_k^{\mathrm{vrf}})$
+\ForAll{$(k, y_k, \pi_k^{\mathrm{vrf}})$ recebido}
+  \If{$\mathrm{VRF.Verify}(vk_k,\, s_t,\, y_k,\, \pi_k^{\mathrm{vrf}}) = \top$}
+    \State $\mathit{candidates} \leftarrow \mathit{candidates} \cup \{(k, y_k)\}$
+  \Else
+    \State $\mathrm{log.audit}(\textsc{rejected},\, k,\, t)$
+  \EndIf
+\EndFor
+\State $(\mathrm{Leader}_t, \_) \leftarrow \arg\min_{(k,y_k) \in \mathit{candidates}} y_k$
+\If{$\mathrm{Leader}_t \neq \mathrm{self}$ \textbf{and} $\mathrm{timeout}(\mathrm{Leader}_t)$}
+  \State $\mathit{candidates} \leftarrow \mathit{candidates} \setminus \{(\mathrm{Leader}_t, \_)\}$
+  \State $(\mathrm{Leader}_t, \_) \leftarrow \arg\min_{(k,y_k) \in \mathit{candidates}} y_k$
+\EndIf
+\State \Return $\mathrm{Leader}_t$
+\end{algorithmic}
+\end{algorithm}
 
 \begin{algorithm}[!ht]
 \caption{Fog Intra-Cluster Round — Rodada $t$ (nó $j$)}
@@ -444,7 +424,7 @@ A camada Fog Inter-Regional coordena o consenso entre múltiplos clusters, combi
 
 \begin{enumerate}
     \item \textbf{Verificador de Provas Regionais}: recebe as provas $\pi^{{reg}}$ (zk-STARK) de cada cluster e valida criptograficamente sem acessar dados clínicos ou gradientes individuais. CLusters com provas inválidas são excluídos da rodada sem comprometer os demais;
-    \item \textbf{Representante do Cluster}: eleito por VRF intra-cluster conforme Seção~\ref{sec:vrf}, submete o par $(\Delta w^{{reg}},\, \pi^{{reg}})$ ao protocolo de consenso inter-regional em nome de seu cluster. A representação unitária por cluser limita a complexidade de comunicação a $\mathcal{O}(k^2)$, onde $k$ é o número de clusters, garantindo escalabilidade horizontal;
+    \item \textbf{Representante do Cluster}: eleito por VRF intra-cluster, submete o par $(\Delta w^{{reg}},\, \pi^{{reg}})$ ao protocolo de consenso inter-regional em nome de seu cluster. A representação unitária por cluster limita a complexidade de comunicação a $\mathcal{O}(k^2)$, onde $k$ é o número de clusters, garantindo escalabilidade horizontal;
     \item \textbf{Consenso Inter-Regional}: executa o protocolo HotStuff em suas três fases, PREPARE, PRE-COMMIT e COMMIT, entre os representantes dos clusters, garantindo acordo sobre o conjunto de gradientes regionais válidos antes da agregação;
     \item \textbf{FL Aggregator Inter-Regional}: após o consenso, computa o gradiente inter-regional via FedAvg ponderado:
     \[
@@ -481,7 +461,8 @@ A camada de \textbf{Observabilidade} implementa coleta de métricas, agregação
 A camada de \textbf{Armazenamento} adota estratégia de \textit{tiering} hierárquico: base local criptografada na Edge; \textit{data lake} seguro com abordagem similar ao IPFS na Fog, para gradientes temporários e modelos regionais; armazenamento frio tipo S3/Glacier na Cloud, para modelos históricos de longo prazo; e arquivo WORM imutável voltado à conformidade regulatória.
 
 
-\subsection{Funcionamento} 
+\subsection{Funcionamento}
+\label{subsec:funcionamento}
 
 A descrição isolada dos componentes de cada camada, embora necessária, não é suficiente para demonstrar como o modelo H-FedChain se comporta como sistema integrado. Essa seção descreve o ciclo de vida completo de uma rodada de treinamento $t$, acompanhando o fluxo de informações desde o momento em que um dispositivo médico coleta sinais de um paciente até o instante em que o modelo global é atualizado e redistribuído, sempre sem que qualquer dado clínico bruto saia do dispositivo onde foi originado. A Figura~\ref{fig:hfedchain_sequencia} detalha na forma de um diagrama de sequência, as interações entre os atores em cada fase da rodada.
 
@@ -492,7 +473,7 @@ A descrição isolada dos componentes de cada camada, embora necessária, não �
 \label{fig:hfedchain_sequencia}
 \end{figure}
 
-Na etapa 1, ocorre a distribuição do modelo e início do ciclo. Toda rodada começa no nível da Cloud, onde o Global Identity Service assina digitalmente os pesos correntes $w^{(t)}$ com a chave privada da CA raiz e os distribui para todos os Fog Nodes registrados. Cada Fog Node, após autenticar o modelo recebido, retransmite os pesos para os dispositivos Edge de seu cluster, também com verificação de identidade. Esse mecanismo garante que nenhum dispositivo execute treinamento sobre uma versão corrompida ou adulterada do modelo, propriedade especialmente relevante em ambientes de saúde sujeitos a comprometimentos físicos ou ataques \textit{main-in-the-middle}.
+Na etapa 1, ocorre a distribuição do modelo e início do ciclo. Toda rodada começa no nível da Cloud, onde o Global Identity Service assina digitalmente os pesos correntes $w^{(t)}$ com a chave privada da CA raiz e os distribui para todos os Fog Nodes registrados. Cada Fog Node, após autenticar o modelo recebido, retransmite os pesos para os dispositivos Edge de seu cluster, também com verificação de identidade. Esse mecanismo garante que nenhum dispositivo execute treinamento sobre uma versão corrompida ou adulterada do modelo, propriedade especialmente relevante em ambientes de saúde sujeitos a comprometimentos físicos ou ataques \textit{man-in-the-middle}.
 
 A etapa 2, é composta pelo treinamento local e geração de prova criptográfica. De posse de $w^{(t)}$, cada dispositivo Edge $i$ treina sobre sua base de dados clínica privada $\mathcal{D}_i$, computando o gradiente local:
 \[
@@ -502,7 +483,7 @@ Os dados do paciente não saem do dispositivo em nenhum momento, o que é transm
 
 Como próxima etapa, de número 3, são realizadas a verificação e agregação intra-nó. Ao receber os triplos dos dispositivos Edge, cada Fog Node $j$ os processa de forma independente, sem coordenação prévia com os demais nós do cluster. A verificação ocorre em duas camadas sucessivas, onde primeiro, a autenticidade PKI de cada contribuição é conferida e, em seguida, a prova zk-SNARK é validada, descartando gradientes cujo processo de cálculo não possa ser criptograficamente atestado. Sobre os gradientes aprovados, o algoritmo Multi-Krum seleciona os $m=n-f$ mais consistentes entre si, produzindo um gradiente local consolidado $\Delta g_j$. Esse resultado representa a visão do nó $j$ sobre o que o cluster deveria aprender nessa rodada, acompanhado das listas $L_j^{acepted}$ e $L_j^{rejected}$ que registram respectivamente quais dispositivos foram aceitos e rejeitados.
 
-A etapa número 4 contempla a eleição descentralizada do líder, em que, com os gradientes locais prontos, o cluster precisa eleger um cordenador para a fase de consenso. Ao invés de manter um líder fixo, o que criaria um ponto único de falha estrutural, o modelo H-FedChain utiliza uma Função Aleatória Verificável (VRF) para realizar essa eleição de forma completamente descentralizada. Cada nó computa independentemente o par $(y_j,\, \pi_j^{{vrf}}) \leftarrow {VRF.Eval}(sk_j,\, s_t)$, onde $s_t = {hash}(B_{t-1})$ é uma semente pública derivada do último bloco confirmado. O nó com o menor $y_j$ entre os candidatos com prova válida torna-se o líder da rodada. Qualquer participante pode verificar a legitimidade dessa escolha usando apenas as chaves públicas registradas na PKI, o que torna a eleição auditável sem exigir coordenação adicional.
+A etapa número 4 contempla a eleição descentralizada do líder, em que, com os gradientes locais prontos, o cluster precisa eleger um coordenador para a fase de consenso. Ao invés de manter um líder fixo, o que criaria um ponto único de falha estrutural, o modelo H-FedChain utiliza uma Função Aleatória Verificável (VRF) para realizar essa eleição de forma completamente descentralizada. Cada nó computa independentemente o par $(y_j,\, \pi_j^{{vrf}}) \leftarrow {VRF.Eval}(sk_j,\, s_t)$, onde $s_t = {hash}(B_{t-1})$ é uma semente pública derivada do último bloco confirmado. O nó com o menor $y_j$ entre os candidatos com prova válida torna-se o líder da rodada. Qualquer participante pode verificar a legitimidade dessa escolha usando apenas as chaves públicas registradas na PKI, o que torna a eleição auditável sem exigir coordenação adicional.
 
 Na etapa 5, é realizada a agregação inter-nós e consenso HotStuff BFT. Nesse momento, o líder selecionado na etapa anterior coleta os gradientes $\{\Delta g_j\}$ dos demais nós e executa uma segunda aplicação do Multi-Krum, agora sobre as contribuições dos Fog Nodes entre si, obtendo o gradiente regional $\Delta w^{{reg}}$. Para garantir que todos os nós honestos concordem com esse resultado antes de qualquer registro permanente, o líder conduz o protocolo HotStuff BFT em suas fases PREPARE, PRE-COMMIT e COMMIT. Somente após o quórum de $\lceil 2n/3 \rceil + 1$ nós emitir o QC\_COMMIT, que representa o certificado coletivo de acordo, o resultado da rodada pode ser persistido no ledger. Esse acoplamento entre agregação e consenso é o núcleo da proposta, onde o ledger não registra apenas o resultado, mas também a evidência de que a maioria honesta do cluster concordou com ele.
 
@@ -551,6 +532,7 @@ criptográfica de gradientes.
 Ambos os baselines são reproduzidos no mesmo ambiente de emulação e com o mesmo dataset, garantindo condições experimentais equivalentes.
 
 \subsection{Cenários de Avaliação}
+\label{sec:cenarios}
 
 Os cenários a seguir foram projetados para cobrir dimensões complementares de arquitetura, sendo a operação nominal, o comportamento sob pressão de escala, resiliência a adversários e custo das garantias criptográficas. Cada cenário isola deliberadamente um conjunto de variáveis para que as diferenças observadas possam ser atribuídas a causas específicas.
 
@@ -569,24 +551,24 @@ Um dos pontos em aberto na literatura é a capacidade das arquiteturas FL-blockc
 
 Mantendo-se $k=4$ clusters e $n=5$ Fog Nodes por cluster, o número de dispositivos Edge por cluster é variado progressivamente em $\{10, 25, 50, 75, 100\}$, totalizando entre 40 e 400 dispositivos ativos por experimentos. Para cada configuração, são executadas 20 rodadas e coletadas a latência média por rodada, o throughput do ledger (blocos por minuto) e o tempo médio de consenso intra-cluster.
 
-A hipótese avaliada é que a complexidade de mensagens $\mathcal{O}(n)$ do HotStuff, em contraste com $\mathcal{O}(n^2)$ do PBFT, permite que o modelo H-FedCHain mantenha latência de rodada abaixo de um limiar de 5s mesmo com 400 dispositivos, enquanto os baselines apresentam degradação superlinear. O overhead da geração de provas zk-SNARK na Edge também é monitorado como função do número de dispositivos concorrentes por cluster.
+A hipótese avaliada é que a complexidade de mensagens $\mathcal{O}(n)$ do HotStuff, em contraste com $\mathcal{O}(n^2)$ do PBFT, permite que o modelo H-FedChain mantenha a latência de rodada dentro do critério de aceitação de 30s mesmo com 400 dispositivos, hipótese avaliada em detalhe na Seção~6.2. O overhead da geração de provas zk-SNARK na Edge também é monitorado como função do número de dispositivos concorrentes por cluster.
 
 \subsubsection{Cenário 3 - Resiliência a Nós Adversariais (Gradient Poisoning)}
 
 Em ambientes IoHT reais, uma fração dos dispositivos pode estar comprometida, seja por falha de hardware ou  seja por ataque deliberado. A ausência de filtragem de gradientes antes da proposta de bloco~\cite{ren2024}, a falta de avaliação do impacto de contribuições adulteradas sobre a acurácia do modelo global~\cite{baucas2023} e experimentos conduzidos em condições homogêneas que não refletem a heterogeneidade adversarial típica de redes hospitalares~\cite{murthy2026} constituem lacunas que este cenário busca suprir, avaliando a capacidade da H-FedChain de detectar e isolar contribuições maliciosas sem comprometer a convergência do modelo global.
 
-A topologia é fixada em $k=4$ clusters, $n=5$ Fog Nodes e 50 dispositivos por cluster, totalizando 200. Em cada experimento, uma fração $\rho \in \{0\%, 5\%, 10\%, 20\%, 30\%\}$ dos dispositivos Edge é configurada para submeter gradientes adversariais gerados por ataque de \textit{label-flipping} e ataque de \textit{sign-flip} alternadamente a cada cinco rodadas. São executadas 50 rodadas de treinamento para cada valor de $\rho$.
+A topologia é fixada em $k=4$ clusters, $n=5$ Fog Nodes e 50 dispositivos por cluster, totalizando 200. Em cada experimento, uma fração $\rho \in \{0\%, 5\%, 10\%, 20\%, 30\%, 40\%\}$ dos dispositivos Edge é configurada para submeter gradientes adversariais gerados por ataque de \textit{label-flipping} e ataque de \textit{sign-flip} alternadamente a cada cinco rodadas. São executadas 50 rodadas de treinamento para cada valor de $\rho$.
 
 As métricas avaliadas são a taxa de detecção de gradientes adversariais pelo Multi-Krum, representada pela ração entre gradientes corretamente rejeitados e total de contribuições maliciosas, a taxa de falso positivo que são contribuições honestas erroneamente rejeitadas, a acurácia final o modelo global e o número de rodadas até a convergência. O cenário também avalia se a prova zk-SNARK é capaz de detectar gradientes com norma anômala antes mesmo da etapa de Multi-Krum, reduzindo a carga de processamento na camada Fog.
 
 \subsubsection{Cenário 4 - Escalabilidade Inter-Regional com Múltiplos Clusters}
 \label{cen:interregional}
 
-A camada Fog Inter-Regional é o componente de maior complexidade organizacional da arquitetura proposta, pois exige que representantes eleitos de clusters geograficamente distintos alcancem consenso sobre modelos regionais heterogêneos. ~\cite{murthy2026} restringem suas avaliações a redes de pequeno porte sem progressão sistemática do número de clusters, ~\cite{ren2024} não propõem mecanismo verificável de coordenação entre domínios administrativos distintos no FLCoin e \cite{baucas2023} não validam cenários com múltiplos agregadores Fog operando concorrentemente. Esse cenário avalia especifcamente o desempenho dessa camada em função do número de clusters participantes.
+A camada Fog Inter-Regional é o componente de maior complexidade organizacional da arquitetura proposta, pois exige que representantes eleitos de clusters geograficamente distintos alcancem consenso sobre modelos regionais heterogêneos. ~\cite{murthy2026} restringem suas avaliações a redes de pequeno porte sem progressão sistemática do número de clusters, ~\cite{ren2024} não propõem mecanismo verificável de coordenação entre domínios administrativos distintos no FLCoin e \cite{baucas2023} não validam cenários com múltiplos agregadores Fog operando concorrentemente. Esse cenário avalia especificamente o desempenho dessa camada em função do número de clusters participantes.
 
-O número de clusters é variado em $\{2, 4, 8,12, 16\}$, cada um representado por um único FOg Node no protocolo inter-regional. A topologia intra-cluster é mantida constante com $n=5$ nós e 30 dispositivos por cluster. A latência entre representantes de diferentes clusters é configurada para refletir comunicação inter-datacenters, 50-150ms, com jitter gaussiano de 20ms, condição mais adversa do que a comunicação intra-cluster.
+O número de clusters é variado em $\{2, 4, 8,12, 16\}$, cada um representado por um único Fog Node no protocolo inter-regional. A topologia intra-cluster é mantida constante com $n=5$ nós e 30 dispositivos por cluster. A latência entre representantes de diferentes clusters é configurada para refletir comunicação inter-datacenters, 50-150ms, com jitter gaussiano de 20ms, condição mais adversa do que a comunicação intra-cluster.
 
-As métricas avaliadas são a latência do consenso inter-regional que é o tempo entre o envio dos gradientes regionais e a emissão do QC\_COMMIT inter cluster, o tempo de geração e verificação da prova zk-STARK inter-regional, o overhead de comunicação total entre representantes e throughput de rodadas completas por hora. A hipótese é que a complexidade $\mathcal{O}(k^2)$ do HotStuff inter-regional combinada com a representação unitária por cluster, mantém a latência abaixo de 2s para até 16 clusters.
+As métricas avaliadas são a latência do consenso inter-regional que é o tempo entre o envio dos gradientes regionais e a emissão do QC\_COMMIT inter cluster, o tempo de geração e verificação da prova zk-STARK inter-regional, o overhead de comunicação total entre representantes e throughput de rodadas completas por hora. A hipótese é que a complexidade $\mathcal{O}(k^2)$ do HotStuff inter-regional combinada com a representação unitária por cluster, mantém a latência dentro do critério de aceitação de 30s mesmo com o crescimento até 16 clusters, hipótese avaliada em detalhe na Seção~6.4.
 
 \subsubsection{Cenário 5 - Overhead de Provas Criptográficas ZKP e Conformidade}
 
@@ -606,6 +588,7 @@ e na Cloud.
 As métricas avaliadas são o tempo adicional médio por rodada em relação à variante sem ZKP, consumo de CPU e memória durante a geração e verificação de provas por camada, o tamanho dos blocos produzidos no ledger e o nível de conformidade auditável que é avaliado pela completude das trilhas de evidência rastreáveis por rodada. Esse cenário responde diretamente à pergunta: Qual é o custo real das garantias criptográficas da arquitetura H-FedChain e ele é aceitável para o ciclo de treinamento FL em ambientes IoHT hierárquico?
 
 \subsection{Métricas de Avaliação}
+\label{sec:metricas}
 
 As métricas adotadas foram organizadas em quatro dimensões de desempenho operacional, robustez e segurança, resiliência e assertividade do consenso e conformidade e auditabilidade. Essa organização reflete os objetivos simultâneos do modelo H-FedChain que é ser eficiente para operar em tempo quase real em ambientes IoHT, ser segura suficiente para resistir a ataques, produzir um modelo de qualidade comparável ao FL centralizado e fornecer evidências criptográficas de conformidade regulatória.
 
@@ -641,7 +624,7 @@ em que ${REJ}$ representa o conjunto de gradientes rejeitados e ${ADV}$ correspo
 \[
 FPR=\frac{|{REJ}\setminus{ADV}|}{N-|{ADV}|}.
 \]
-Como critério de aceitação, estabelece-se $FRP \leq 0,05$, evitando que contribuições legítimas sejam excessivamente eliminadas.
+Como critério de aceitação, estabelece-se $FPR \leq 0,05$, evitando que contribuições legítimas sejam excessivamente eliminadas.
 
 \textbf{Resistência a \textit{view-change} ($R_{vc}$)} avalia a capacidade do protocolo de consenso em recuperar-se da falha deliberada do líder eleito, medindo tanto o número de trocas de visão quanto a latência adicional introduzida por esse mecanismo.
 
@@ -649,7 +632,7 @@ Como critério de aceitação, estabelece-se $FRP \leq 0,05$, evitando que contr
 
 \subsubsection{Resiliência e Assertividade do Consenso}
 
-Além das métricas de desempenho e segurança, a H-FedChain é avaliada quanto às propriedadades fundamentais de \textit{safety} e \textit{liveness} do protocolo de consenso HotStuff. Essa análise considera cenários com falhas de líderes, desconexão de nós e variações na carga de trabalho, permitindo verificar a capacidade do mecanismo de consenso em manter consistência e disponibilidade durante o treinamento federado. Diferente dos trabalhos identificados na revisão sistemática, que concentram suas avaliações no desempenho isolado do consenso, essa pesquisa incorpora essas propriedades ao ciclo completo de aprendizado federado.
+Além das métricas de desempenho e segurança, a H-FedChain é avaliada quanto às propriedades fundamentais de \textit{safety} e \textit{liveness} do protocolo de consenso HotStuff. Essa análise considera cenários com falhas de líderes, desconexão de nós e variações na carga de trabalho, permitindo verificar a capacidade do mecanismo de consenso em manter consistência e disponibilidade durante o treinamento federado. Diferente dos trabalhos identificados na revisão sistemática, que concentram suas avaliações no desempenho isolado do consenso, essa pesquisa incorpora essas propriedades ao ciclo completo de aprendizado federado.
 
 \textbf{Taxa de sucesso do consenso ($SC$)} representa a proporção de rodadas em que o certificado de confirmação (\textit{QC\_COMMIT}) é emitido dentro do tempo limite estabelecido.
 \[
@@ -669,7 +652,7 @@ O protocolo é considerado satisfatório quando $SC \geq 0,99$ em cenários sem 
 
 A conformidade regulatória da arquitetura H-FedChain é avaliada por métricas relacionadas à completude das evidências criptográficas, ao custo adicional introduzido pelos mecanismos de auditoria e à capacidade de reconstrução do histórico de execução do treinamento federado.
 
-\textbf{Completude das trilhas de auditoria ($CA$)} corresponde à razão entre o número de rodadas que apresentam todos os artefatos criptográficos esperados, provas zk-SNARK dos dispositivos, provas zk-STARK regionais e inter-regionais e registro no ledger WORK, e o número total de rodadas executadas.
+\textbf{Completude das trilhas de auditoria ($CA$)} corresponde à razão entre o número de rodadas que apresentam todos os artefatos criptográficos esperados, provas zk-SNARK dos dispositivos, provas zk-STARK regionais e inter-regionais e registro no ledger WORM, e o número total de rodadas executadas.
 \[
 CA=\frac{|\{{rodadas com trilha completa}\}|}{R_{{total}}}.
 \]
@@ -681,13 +664,121 @@ Espera-se $CA = 1,0$, indicando trilha completa para todas as rodadas bem-sucedi
 
 \section{Resultados}
 
+Esta seção apresenta os resultados obtidos a partir da execução dos cinco cenários de avaliação descritos na Seção~\ref{sec:cenarios}, cada configuração executada em 5 repetições independentes, permitindo reportar média e desvio padrão para cada métrica. Rodadas com latência superior a 5 vezes a mediana da execução, identificadas como artefato de \textit{throttling} de CPU durante a coleta, foram descartadas antes do cálculo das estatísticas; apenas uma rodada, na configuração $\rho=30\%$ do Cenário 3, foi removida nesse critério. A Tabela~\ref{tab:resumo-resultados} sintetiza as métricas mais relevantes por cenário e configuração, servindo de referência para a discussão a seguir.
+
+\begin{table}[htbp]
+\centering
+\caption{Síntese dos resultados por cenário e configuração (média $\pm$ desvio padrão sobre 5 execuções).}
+\label{tab:resumo-resultados}
+\small
+\begin{tabular}{p{1.6cm}p{1.3cm}p{2.2cm}p{3.5cm}p{1.6cm}}
+\hline
+\textbf{Cenário} & \textbf{Config.} & \textbf{Latência (s)} & \textbf{Métrica-chave} & \textbf{Critério} \\
+\hline
+1 - Nominal & nominal & 0,190 $\pm$ 0,006 & $SC=100\%$; $I_{ledger}=100\%$ & Atendido \\
+\hline
+\multirow{2 - Escala} & d10 (40) & 0,205 $\pm$ 0,008 & Throughput 293,1 blocos/min & Atendido \\
+ & d25 (100) & 0,735 $\pm$ 0,025 & Throughput --- & Atendido \\
+ & d50 (200) & 4,292 $\pm$ 0,097 & Throughput --- & Atendido \\
+ & d75 (300) & 29,615 $\pm$ 1,061 & Throughput 2,0 blocos/min & Exploratório \\
+ & d100 (400) & 29,307 $\pm$ 0,131 & Throughput 2,0 blocos/min & Exploratório \\
+\hline
+\multirow{3 - Adversarial} & $\rho=0\%$ & 3,92 & $DR=100\%$; $FPR=2,5\%$ & Atendido \\
+ & $\rho=5\%$ & --- & $DR=100\%$; $FPR=2,6\%$ & Atendido \\
+ & $\rho=10\%$ & --- & $DR=100\%$; $FPR=2,9\%$ & Atendido \\
+ & $\rho=20\%$ & --- & $DR=100\%$; $FPR=3,3\%$ & Atendido \\
+ & $\rho=30\%$ & 3,85 & $DR=100\%$; $FPR=4,0\%$ & Atendido \\
+ & $\rho=40\%$ & 5,57 & $DR=100\%$; $FPR=5,0\%$ & No limite \\
+\hline
+\multirow{4 - Inter-Reg.} & $k=2$ & 0,571 $\pm$ 0,014 & VRF líder 43,7ms & Atendido \\
+ & $k=4$ & 1,146 $\pm$ 0,022 & --- & Atendido \\
+ & $k=8$ & 2,282 $\pm$ 0,057 & --- & Atendido \\
+ & $k=12$ & 3,386 $\pm$ 0,095 & --- & Atendido \\
+ & $k=16$ & 4,579 $\pm$ 0,064 & VRF líder 360,8ms & Atendido \\
+\hline
+\multirow{5 - ZKP} & Sem ZKP & 0,608 $\pm$ 0,013 & Bloco 2.044B & Atendido \\
+ & Só SNARK & 0,615 $\pm$ 0,018 & Bloco 2.044B & Atendido \\
+ & Só STARK & 6,034 $\pm$ 0,086 & Bloco 24.485B & Atendido \\
+ & Completa & 5,969 $\pm$ 0,074 & Bloco 24.485B; $CA=100\%$ & Atendido \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Cenário 1 - Operação Nominal}
+
+O Cenário 1 estabelece a linha de base de desempenho da arquitetura em condições ideais, avaliado pela latência da rodada ($L_{rodada}$) e pela taxa de sucesso do consenso ($SC$), métricas definidas nas Seções~5.3.1 e 5.3.3. A latência média por rodada foi de 0,190s $\pm$ 0,006s (coeficiente de variação de 3,4\%), com o tempo de consenso intra-cluster ($T_{BFT}$) também em 190,4ms $\pm$ 6,4ms, valores bem inferiores aos critérios de aceitação $L_{rodada} \leq 30$s e $T_{BFT} < 2$s. A taxa de sucesso do consenso manteve-se em 100\% nas cinco execuções, sem ocorrência de \textit{view-changes}, e a integridade do ledger foi preservada em todas as rodadas ($I_{ledger} = 100\%$, $D_{rep} = 0\%$). A perda final normalizada foi de 0,1135 $\pm$ 0,0090 (CV de 7,9\%), servindo de referência para a leitura comparativa dos demais cenários. Um ponto que merece registro qualitativo é a taxa de falso positivo (FPR) de 12,5\% observada mesmo na ausência de adversários: como não há gradientes maliciosos submetidos nesse cenário, esse valor reflete a rejeição natural do Multi-Krum por seu próprio critério estatístico de distância, e não uma falha do mecanismo de filtragem.
+
+\subsection{Cenário 2 - Escalabilidade com Aumento de Dispositivos}
+
+O Cenário 2 avalia o comportamento da latência de rodada em função do número de dispositivos ativos, de 40 a 400. Os resultados mostram crescimento da latência de 0,205s $\pm$ 0,008s com 40 dispositivos para 0,735s $\pm$ 0,025s com 100 dispositivos, 4,292s $\pm$ 0,097s com 200 dispositivos, 29,615s $\pm$ 1,061s com 300 dispositivos e 29,307s $\pm$ 0,131s com 400 dispositivos, permanecendo dentro do critério de aceitação $L_{rodada} \leq 30$s em todas as configurações, ainda que de forma apenas marginal nas duas maiores. A análise dos estágios de execução indica que o principal responsável por esse crescimento é o tempo de geração da prova zk-STARK, que domina o tempo total de rodada nas configurações de maior escala, e não o consenso HotStuff propriamente dito. Esse resultado qualifica de forma relevante a leitura do desempenho da arquitetura: o custo assintótico da geração de provas criptográficas na implementação de referência é o fator limitante de escalabilidade observado, e não o protocolo de consenso. Adicionalmente, o \textit{throughput} do ledger cai de 293,1 blocos/min (40 dispositivos) para 2,0 blocos/min (300 e 400 dispositivos), reforçando que o crescimento do custo de prova, e não da confirmação de blocos, é o responsável pela degradação observada na latência.
+
+\subsection{Cenário 3 - Resiliência a Nós Adversariais (Gradient Poisoning)}
+
+O Cenário 3 avalia a robustez da arquitetura frente a participantes adversariais por meio da taxa de detecção de gradientes adversariais ($DR$) e da taxa de falso positivo ($FPR$), métricas definidas na Seção~5.3.2. A taxa de detecção manteve-se em 100\% para todas as frações de adversários testadas ($\rho \in \{0\%, 5\%, 10\%, 20\%, 30\%, 40\%\}$), superando com margem confortável o critério $DR \geq 0,95$. A taxa de falso positivo cresce de forma consistente com $\rho$, de 2,5\% em $\rho=0\%$ até atingir exatamente o limite de aceitação de 5,0\% em $\rho=40\%$, indicando que o pré-filtro estatístico combinado ao Multi-Krum opera com folga decrescente à medida que a fração de adversários aumenta. A taxa de sucesso do consenso permaneceu em 100\% em todas as configurações. Um achado qualitativo notável é que a latência da rodada tende a diminuir levemente com o aumento de $\rho$ nas frações intermediárias (de 3,92s em $\rho=0\%$ para 3,85s em $\rho=30\%$, com aumento para 5,57s apenas em $\rho=40\%$): como uma fração maior de gradientes adversariais é rejeitada antes da etapa de agregação, um número menor de contribuições segue para a geração da prova zk-STARK, reduzindo o custo computacional dessa etapa. Esse comportamento evidencia uma interação não trivial entre o mecanismo de filtragem robusta e o custo da camada criptográfica, que não seria capturada pela leitura isolada de qualquer uma das duas métricas.
+
+\subsection{Cenário 4 - Escalabilidade Inter-Regional com Múltiplos Clusters}
+
+O Cenário 4 avalia a camada Fog Inter-Regional em função do número de clusters participantes, de 2 a 16. Os resultados mostram crescimento aproximadamente linear da latência com o número de clusters: 0,571s $\pm$ 0,014s (2 clusters), 1,146s $\pm$ 0,022s (4 clusters), 2,282s $\pm$ 0,057s (8 clusters), 3,386s $\pm$ 0,095s (12 clusters) e 4,579s $\pm$ 0,064s (16 clusters), permanecendo em todas as configurações dentro do critério de aceitação $L_{rodada} \leq 30$s. A decomposição por estágio mostra que o principal responsável pelo crescimento da latência é o tempo de eleição de líder por VRF entre representantes de clusters, que cresce de 43,7ms (2 clusters) para 360,8ms (16 clusters), enquanto o consenso HotStuff inter-cluster propriamente dito e a geração de prova zk-STARK inter-regional permanecem em valores baixos (na ordem de poucos milissegundos) em todas as configurações. Esse resultado qualifica de forma relevante o comportamento da camada inter-regional: é o mecanismo de eleição de líder, e não o custo do consenso BFT em si, que concentra o crescimento observado com a escala do número de clusters. Quanto à diversidade de líderes eleitos, observa-se crescimento de 0,200 (2 clusters) para 0,660 (12 e 16 clusters), sugerindo rotação de liderança mais equilibrada à medida que a rede cresce.
+
+\subsection{Cenário 5 - Overhead de Provas Criptográficas ZKP e Conformidade}
+
+O Cenário 5 isola o custo das garantias criptográficas ZKP nas quatro variantes avaliadas: sem ZKP, apenas zk-SNARK, apenas zk-STARK e H-FedChain completa. A latência média foi de 0,608s $\pm$ 0,013s (sem ZKP), 0,615s $\pm$ 0,018s (apenas SNARK), 6,034s $\pm$ 0,086s (apenas STARK) e 5,969s $\pm$ 0,074s (completa). Um achado qualitativo importante desse cenário é que a variante com apenas zk-SNARK apresenta latência praticamente idêntica à variante sem ZKP (overhead de conformidade de apenas +1\%), enquanto a variante com zk-STARK isolada apresenta overhead de +892\% e a variante completa, de +882\%: isso ocorre porque, no ambiente de avaliação sintético utilizado, os gradientes não carregam prova zk-SNARK a ser efetivamente verificada, de modo que o custo dessa camada não chega a ser exercitado nesse experimento, enquanto o custo do zk-STARK, medido de forma completa, é o responsável por praticamente todo o overhead de conformidade observado. O tamanho médio dos blocos cresce de 2.044 bytes (sem ZKP e apenas SNARK) para 24.485 bytes (com STARK, isolado ou completo), refletindo o volume adicional de dados exigido pela prova regional. Ainda assim, a completude das trilhas de auditoria ($CA$) e a taxa de sucesso de verificação das provas ZKP mantiveram-se em 100\% em todas as quatro variantes, atendendo aos critérios de aceitação estabelecidos.
+
+\subsection{Consistência Transversal aos Cinco Cenários}
+
+Independentemente do cenário avaliado, a integridade do ledger ($I_{ledger}$), a ausência de divergência de estado entre réplicas ($D_{rep} = 0$), a rastreabilidade de participação ($RP$), a completude das trilhas de auditoria ($CA$) e a taxa de sucesso de verificação das provas ZKP mantiveram-se em 100\% em todas as configurações testadas, ao longo das cinco execuções por cenário. Essa estabilidade, obtida sob condições operacionais bastante distintas de escala e de proporção de participantes adversariais, sustenta de forma consistente as propriedades de \textit{safety} do protocolo HotStuff BFT e a coesão do pipeline de verificação em camadas da H-FedChain.
+
+\subsection{Comparação com a Literatura}
+
+Para situar os resultados da H-FedChain frente ao estado da arte revisado na Seção~3, a Tabela~\ref{tab:comparacao-literatura} reapresenta a consolidação da literatura originalmente sintetizada na Tabela~\ref{tab:comparativa}, adicionando uma última linha correspondente a esse trabalho.
+
+\begin{table}[htbp]
+\centering
+\caption{Comparação entre a H-FedChain e os trabalhos relacionados.}
+\label{tab:comparacao-literatura}
+\small
+\begin{tabular}{p{2.1cm}p{2.6cm}p{2.6cm}p{2.3cm}p{3.2cm}}
+\hline
+\textbf{Autor/Ano} & \textbf{Técnica Principal} & \textbf{Dataset/Contexto} & \textbf{Métrica} & \textbf{Gap Identificado} \\
+\hline
+Rajagopal (2025) & FedSDM (FL + Ganache BC) & EUA Dataset (ECG - 5.000 leituras) & Latência (-79\%) & Falta de testes em implantação real. \\
+Cheikhrouhou (2023) & BC Leve + Fog Inteligente & Sintético (RPM - 24 máquinas ECG) & Responsividade (+40\%) & Agendamento de dados injusto no Fog. \\
+Laouamri (2025) & RaftNode + Schnorr & Simulação NS3 (30 sensores, 8Mb dados) & Throughput / Energia & Requisito de altos recursos de simulação. \\
+Murthy (2026) & ABFT-RL (Consenso via IA) & Icentia 11k / Fitbit (10M registros/1M transações) & Throughput (+43\%) & Heterogeneidade real não capturada. \\
+Ren (2024) & FLCoin (BC de 2 camadas) & MNIST / Edge Nodes (70.000 imagens) & Overhead Comm (-90\%) & Segurança em janelas de comitê rotativas. \\
+Tripathy (2024) & FedHealthFog (Heurística Greedy) & PhysioNet (Sinais Simulados 5-20 clientes) & Delay (-87\%) & Ausência de segurança intrínseca no consenso. \\
+Ahmad (2023) & Clusters CFC/NFC & Sinais Vitais (1.200 características) & Acurácia (99\%) & Latência de mineração na nuvem. \\
+Kamruzzaman (2022) & SLR (PRISMA) & 10 artigos seminais / Smart Cities & Interoperabilidade & Escassez de estudos integradores (3 camadas). \\
+Alam (2022) & Framework BFCM & Revisão IoMT & Confiabilidade & Falta de implementação experimental. \\
+Baucas (2023) & Fog-IoT Platform & HAR UCI (10.299 instâncias) & Integridade / Privacidade & Escalabilidade para redes massivas. \\
+Al-Joboury (2020) & BoT (Fog Server) & Linux-based Fog (Stream simulado 100 dados/seg) & CPU / Memória & Foco em emulação local/virtual. \\
+\hline
+\textbf{Esse trabalho} & \textbf{H-FedChain (HotStuff BFT + Multi-Krum + zk-SNARK/zk-STARK + VRF)} & \textbf{PTB-XL ECG (21.799 registros), até 400 dispositivos Edge, $k=4$ clusters} & \textbf{Latência 0,190s--29,615s; DR 100\%; $I_{ledger}$ 100\%} & \textbf{Integra consenso BFT, prova ZKP e auditoria imutável fim a fim em arquitetura hierárquica edge-fog-cloud} \\
+\hline
+\end{tabular}
+\end{table}
+
+A leitura conjunta da Tabela~\ref{tab:comparacao-literatura} evidencia que a maioria dos trabalhos relacionados reporta ganhos expressivos em uma única dimensão de desempenho, latência, responsividade ou \textit{overhead} de comunicação, sem avaliar simultaneamente robustez a participantes adversariais e auditabilidade criptográfica. Rajagopal et al. alcançam redução de latência de 79\% com FedSDM, mas não avaliam resistência a gradientes adversariais nem oferecem prova criptográfica das agregações, lacuna que a H-FedChain endereça com a taxa de detecção de 100\% obtida no Cenário 3, sustentada por provas zk-SNARK e zk-STARK verificáveis em cada camada. De forma semelhante, Ren et al. reduzem em 90\% o \textit{overhead} de comunicação com o FLCoin, mas sem verificação criptográfica das contribuições; a H-FedChain, embora apresente latência superior em cenários de maior escala (29,615s na configuração de 300 dispositivos do Cenário 2), compensa esse custo com integridade de ledger, rastreabilidade completa e ausência de divergência de estado, mantidas em 100\% em todos os cenários avaliados.
+
+Esse padrão confirma a lacuna central identificada na Seção~3.2: a escassez de soluções que articulem simultaneamente os requisitos de latência e energia da IoMT, a hierarquia edge-fog-cloud, a agregação de modelos em aprendizado federado e o consenso como mecanismo explícito de auditoria. Os resultados discutidos nas subseções anteriores sugerem que essa articulação é tecnicamente viável na H-FedChain, ainda que ao custo de latência mais elevada nos cenários de maior complexidade organizacional, como o de consenso inter-regional, quando comparada às soluções que tratam apenas uma camada ou uma dimensão de segurança isoladamente.
 
 \subsection{Limitações}
 
+Alguns aspectos do desenho experimental e dos resultados obtidos merecem registro explícito como limitações, de modo a delimitar o escopo de validade das conclusões extraídas.
+
+Nos Cenários 2 e 4, o principal fator de crescimento da latência não é o protocolo de consenso HotStuff, mas sim a geração da prova zk-STARK (Cenário 2) e o mecanismo de eleição de líder por VRF (Cenário 4). Isso significa que a arquitetura, embora permaneça dentro do critério de aceitação amplo de $L_{rodada} \leq 30$s em todas as configurações testadas, apresenta gargalos concentrados em componentes específicos que devem ser considerados no planejamento de implantações de maior escala, especialmente a implementação de referência da camada de prova criptográfica.
+
+Uma segunda limitação, evidenciada no Cenário 5, é que o custo da verificação zk-SNARK não foi efetivamente exercitado no ambiente de avaliação sintético utilizado, uma vez que os gradientes gerados não carregam prova SNARK a ser verificada. Isso significa que o overhead real dessa camada, na configuração completa da arquitetura, permanece sem medição direta, e o valor de overhead atribuído à variante completa é, na prática, atribuível quase inteiramente ao custo do zk-STARK.
+
+A terceira limitação refere-se à ausência de falhas do líder de consenso em qualquer um dos cinco cenários e execuções avaliadas: como nenhum experimento provocou deliberadamente a queda ou o comportamento Bizantino do nó eleito, o mecanismo de \textit{view-change}, associado à garantia de \textit{liveness} do protocolo HotStuff BFT, não chegou a ser exercitado em nenhuma das cinco repetições realizadas.
+
+Por fim, a taxa de falso positivo observada no Cenário 3 atinge exatamente o limite de aceitação (5,0\%) na configuração de maior fração adversarial ($\rho=40\%$), o que, mesmo sustentado por cinco execuções independentes, recomenda cautela na extrapolação desse resultado para frações de participantes maliciosos superiores às testadas neste trabalho.
 
 \section{Conclusão}
 
-WIP
+Esse trabalho apresentou a H-FedChain, uma arquitetura hierárquica de segurança e auditabilidade para proteger a agregação distribuída de atualizações no aprendizado federado. Organizada nas camadas \textit{Edge}, \textit{Fog} e \textit{Cloud}, a proposta integra autenticação, filtragem robusta, provas de conhecimento zero, consenso HotStuff, eleição descentralizada de líderes e registro imutável em \textit{ledger} distribuído. Nos cinco cenários avaliados, a arquitetura alcançou 100\% de detecção de atualizações adversariais, verificação de provas, integridade do \textit{ledger} e rastreabilidade, sem divergência de estado entre as réplicas, com latência média por rodada entre 0,190 e 29,615 segundos ao longo das configurações avaliadas, sendo o custo de geração das provas criptográficas o principal fator de crescimento identificado sob maior escala. Esses resultados indicam que mecanismos criptográficos complementares podem compor um pipeline operacionalmente viável e capaz de preservar evidências sobre a origem, a validação e a consolidação das contribuições. Como possibilidade de transferência tecnológica, a H-FedChain pode orientar projetos-piloto em redes públicas de saúde, hospitais, programas de telemonitoramento e consórcios intermunicipais, nos quais dados derivados de sinais vitais precisam subsidiar auditorias e políticas públicas com critérios uniformes entre diferentes localidades. A arquitetura não atesta a correção clínica da leitura produzida pelo sensor, mas protege sua trajetória de processamento, permitindo verificar se as atualizações recebidas foram validadas, agregadas e registradas sem alterações não autorizadas.
+
+Como trabalhos futuros, pretende-se avaliar a arquitetura em ambientes reais ou ambientes de testes controlados de maior escala, com dispositivos heterogêneos, condições variáveis de rede e repetição sistemática dos experimentos para obtenção de intervalos de confiança. Também deverão ser induzidas falhas do líder e comportamentos bizantinos controlados para validar o mecanismo de \textit{view-change}, além de ampliar as frações de participantes adversariais, investigar a interação entre o processamento das provas zk-STARK e a eleição por VRF e aperfeiçoar os critérios de filtragem para reduzir falsos positivos. Por fim, a evolução da proposta deverá incorporar mecanismos de verificação da procedência e da qualidade das leituras na origem, bem como estudos de implantação, governança e conformidade conduzidos em parceria com gestores públicos e profissionais de saúde. Essa aproximação permitirá avaliar não apenas o desempenho técnico da H-FedChain, mas também sua capacidade de apoiar auditorias compreensíveis, decisões públicas transparentes e relações de confiança entre as comunidades atendidas.
 
 \bibliographystyle{sbc}
 \bibliography{sbc-template}
