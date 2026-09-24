@@ -257,6 +257,8 @@ def test_build_comparison_full(tmp_path):
     assert r"\begin{table}" in tex
     assert "tab:comparison_nominal" in tex
     assert set(collectors) == {"H-FedChain", "FedSDM", "FLCoin"}
+    assert warnings == []
+    assert "nan" not in tex.lower()
 
 
 def test_build_comparison_missing_all(tmp_path):
@@ -294,3 +296,9 @@ def test_batch_reference_empty_runs_dir(tmp_path, monkeypatch):
     import experiments.analyze_results as ar
     monkeypatch.setattr(ar, "RUNS_DIR", tmp_path / "nope")
     assert gt.build_batch_reference() == []
+
+
+def test_build_comparison_invalid_json(tmp_path):
+    (tmp_path / "comparison_nominal_h_fedchain.json").write_text("{nope")
+    with pytest.raises(SystemExit):
+        gt.build_comparison(tmp_path)

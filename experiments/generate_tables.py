@@ -20,6 +20,7 @@ from experiments.metrics import MetricsCollector
 from experiments.analyze_results import (
     SCENARIO_CONFIGS, CONFIG_ROW_LABEL, TABLE_HEADERS, TABLE_METRICS,
     fmt_cell, compute_stats, core_latency, eval_criteria, _flatten,
+    load_runs, metric_paths,
 )
 
 
@@ -291,7 +292,13 @@ def build_comparison(results_dir: Path):
         if not path.exists():
             warnings.append(f"[AVISO] comparação ausente: {path.name}")
             continue
-        records = json.loads(path.read_text())
+        try:
+            records = json.loads(path.read_text())
+        except json.JSONDecodeError as e:
+            raise SystemExit(f"JSON inválido em {path}: {e}")
+        if not isinstance(records, list):
+            raise SystemExit(
+                f"JSON não é uma lista de rounds em {path}")
         if not records:
             warnings.append(f"[AVISO] comparação vazia: {path.name}")
             continue
@@ -306,22 +313,23 @@ def build_comparison(results_dir: Path):
 
 
 def build_batch_reference() -> list[dict]:
-    import experiments.analyze_results as ar
     rows = []
     for scenario, configs in SCENARIO_CONFIGS.items():
         for c in configs:
-            runs = ar.load_runs(scenario, c["label"])
+            runs = load_runs(scenario, c["label"])
             if not runs:
                 continue
             metrics = []
             for r in runs:
                 m = dict(r["metrics"])
-                m["core_latency"] = ar.core_latency(m)
+                m["core_latency"] = core_latency(m)
                 metrics.append(m)
-            for p in ar.metric_paths(metrics):
-                vals = [ar._flatten(m).get(p, 0) for m in metrics]
-                if all(isinstance(v, (int, float)) for v in vals):
-                    st = ar.compute_stats(vals)
+            for p in metric_paths(metrics):
+                vals = [_flatten(m).get(p) for m in metrics]
+                if vals and all(
+                        isinstance(v, (int, float))
+                        and not isinstance(v, bool) for v in vals):
+                    st = compute_stats(vals)
                     rows.append({
                         "scenario": scenario, "config": c["label"],
                         "metric": p, "mean": st["mean"], "std": st["std"],
