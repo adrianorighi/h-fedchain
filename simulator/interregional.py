@@ -144,11 +144,21 @@ class InterRegionalManager:
         self.ledger.append(round_num, delta_w_inter_bytes, pi_inter.proof_bytes,
                           [r.cluster_id for r in regionals])
 
-        # Bytes inter-cluster (fog→fog): payload delta_w dos regionais +
-        # modelo consolidado votado (n_active * 64 bytes por voto)
+        # Bytes inter-cluster (fog→fog): payload regional real (delta_w_data,
+        # usado na FedAvg; fallback p/ hash) + provas STARK regionais.
+        # Votos QC (64N) contam apenas em bytes_fog_cloud (experiment_runner).
         bytes_fog_inter = (
-            sum(len(pickle.dumps(r.delta_w)) for r in regionals)
-            + len(regionals) * 64
+            sum(
+                len(pickle.dumps(r.delta_w_data))
+                if r.delta_w_data is not None
+                else len(pickle.dumps(r.delta_w))
+                for r in regionals
+            )
+            + sum(
+                len(r.stark_proof.proof_bytes)
+                for r in regionals
+                if r.stark_proof is not None
+            )
         )
 
         return GlobalOutput(

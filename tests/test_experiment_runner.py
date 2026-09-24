@@ -35,8 +35,10 @@ async def test_multi_cluster_run():
         assert "block_size_bytes" in r
         assert "round" in r
         assert required <= set(r), f"Missing directional byte keys: {required - set(r)}"
-        assert r["network_bytes"] >= 0
-        assert r["bytes_fog_cloud"] >= 0
+        assert r["bytes_edge_fog"] > 0
+        assert r["bytes_fog_intra"] > 0
+        assert r["bytes_fog_inter"] > 0
+        assert r["bytes_fog_cloud"] > 0
         assert r["network_bytes"] == (
             r["bytes_edge_fog"] + r["bytes_fog_intra"]
             + r["bytes_fog_inter"] + r["bytes_fog_cloud"]

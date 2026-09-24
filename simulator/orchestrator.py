@@ -311,7 +311,9 @@ class Orchestrator:
 
         ledger_integrity = all(n.ledger.verify_chain() for n in self.nodes)
 
-        # Communication overhead (bytes) — Edge->Fog + inter-node + block propagation
+        # Communication overhead (bytes) — Edge->Fog + inter-node + block propagation.
+        # comm_overhead_bytes é mode-dependent (single=total completo,
+        # multi=parcela cloud); network_bytes é o total unificado.
         edge_fog_bytes = sum(len(pickle.dumps(g)) for g in grads)
         inter_node_bytes = sum(len(pickle.dumps(r)) for r in cluster_results)
         block_bytes = len(pickle.dumps(block))
@@ -332,7 +334,7 @@ class Orchestrator:
             "block_size_bytes": len(pickle.dumps(block)),
             "comm_overhead_bytes": comm_overhead,
             "bytes_edge_fog": edge_fog_bytes,
-            "bytes_fog_intra": inter_node_bytes,
+            "bytes_fog_intra": inter_node_bytes + block_bytes,
             "bytes_fog_inter": 0,
             "bytes_fog_cloud": 0,
             "network_bytes": edge_fog_bytes + inter_node_bytes + block_bytes,

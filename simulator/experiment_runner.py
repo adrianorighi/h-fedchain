@@ -76,6 +76,8 @@ class ExperimentRunner:
             result["bytes_edge_fog"] + result["bytes_fog_intra"]
             + result["bytes_fog_inter"] + result["bytes_fog_cloud"]
         )
+        # comm_overhead_bytes: mode-dependent (multi=parcela cloud;
+        # single=total completo). Total unificado = network_bytes.
         result["comm_overhead_bytes"] = result["bytes_fog_cloud"]
         result["loss"] = self.interregional.last_loss
         result["model_accuracy"] = 0.0  # inter-regional has no ground truth

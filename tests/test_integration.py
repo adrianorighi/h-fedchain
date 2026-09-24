@@ -103,9 +103,11 @@ async def test_directional_bytes_single_cluster():
     assert required <= set(result), f"Missing keys: {required - set(result)}"
     assert result["bytes_fog_inter"] == 0
     assert result["bytes_fog_cloud"] == 0
-    assert result["bytes_edge_fog"] >= 0
-    assert result["bytes_fog_intra"] >= 0
-    assert result["network_bytes"] >= 0
+    assert result["bytes_edge_fog"] > 0
+    assert result["bytes_fog_intra"] > 0
+    assert result["network_bytes"] == (
+        result["bytes_edge_fog"] + result["bytes_fog_intra"]
+    )
     assert result["network_bytes"] == result["comm_overhead_bytes"]
 
 
