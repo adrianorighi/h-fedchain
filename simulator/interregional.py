@@ -30,6 +30,9 @@ class InterRegionalManager:
         self._manager_sk, self._manager_vk = generate_keypair()
         self.ledger = InterRegionalLedger()
         self.stage_times: dict[str, float] = {}
+        # process_time CPU de verificações; mantido fora de stage_times
+        # para não vazar em somas de latência/consensus_time_ms.
+        self.verify_cpu_ms: dict[str, float] = {"stark_verify_regional": 0.0}
         self.last_leader_id: str = ""
         self.last_loss: float = 0.0
 
@@ -43,6 +46,7 @@ class InterRegionalManager:
             GlobalOutput com delta_w consolidado, prova STARK e métricas.
         """
         self.stage_times = {}
+        self.verify_cpu_ms = {"stark_verify_regional": 0.0}
 
         # 1. Coletar outputs regionais com verificação STARK
         t0 = time.perf_counter()
@@ -68,7 +72,7 @@ class InterRegionalManager:
                     continue
 
             regionals.append(output)
-        self.stage_times["stark_verify_regional"] = verify_cpu_ms
+        self.verify_cpu_ms["stark_verify_regional"] = verify_cpu_ms
 
         if not regionals:
             return GlobalOutput(

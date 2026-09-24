@@ -337,9 +337,8 @@ class Orchestrator:
         stark_gen_ms = leader_node.stage_times.get("stark_gen", 0.0)
         proof_gen_cpu_ms = snark_gen_ms + stark_gen_ms
 
-        # fog verify_block é invocado apenas em caminhos de verificação
-        # explícitos; rodadas single-cluster podem reportar 0.0 quando a
-        # verificação STARK do bloco não é exercitada no fluxo da rodada.
+        # Rodadas single-cluster reportam 0.0 em proof_verify_cpu_ms porque
+        # FogNode.verify_block não é invocado no fluxo normal da rodada.
         proof_verify_cpu_ms = leader_node.stage_times.get("stark_verify", 0.0)
 
         snark_size = sum(getattr(g, "snark_proof_size", 0) for g in grads)
