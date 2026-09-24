@@ -100,16 +100,17 @@ BYTE_KEYS = ("bytes_edge_fog", "bytes_fog_intra", "bytes_fog_inter",
 def check_byte_invariant(fname: str, records: list[dict]) -> list[str]:
     warnings = []
     for i, r in enumerate(records):
-        total = sum(r.get(k, 0) for k in BYTE_KEYS)
-        if r.get("network_bytes", 0) != total:
+        nb = r.get("network_bytes") or 0
+        total = sum(r.get(k) or 0 for k in BYTE_KEYS)
+        if nb != total:
             rnd = r.get("round", i)
             warnings.append(
                 f"[AVISO] {fname} round {rnd}: network_bytes="
-                f"{r.get('network_bytes')} != soma dos elos={total}")
+                f"{nb} != soma dos elos={total}")
     return warnings
 
 
-def load_configs(results_dir: Path):
+def load_configs(results_dir: Path) -> tuple[dict, dict, list[str]]:
     stats, aggs, warnings = {}, {}, []
     for scenario, configs in SCENARIO_CONFIGS.items():
         stats[scenario], aggs[scenario] = {}, {}
@@ -123,6 +124,9 @@ def load_configs(results_dir: Path):
                 records = json.loads(path.read_text())
             except json.JSONDecodeError as e:
                 raise SystemExit(f"JSON inválido em {path}: {e}")
+            if not isinstance(records, list):
+                raise SystemExit(
+                    f"JSON não é uma lista de rounds em {path}")
             if not records:
                 warnings.append(f"[AVISO] sem rounds: {path.name}")
                 continue
