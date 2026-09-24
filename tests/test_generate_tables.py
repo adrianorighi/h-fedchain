@@ -69,3 +69,38 @@ def test_config_stats_bytes_per_link_in_mb():
     assert st["mb_edge_fog"]["mean"] == pytest.approx(40 / 1e6)
     assert st["mb_fog_inter"]["mean"] == pytest.approx(20 / 1e6)
     assert st["mb_fog_cloud"]["mean"] == pytest.approx(10 / 1e6)
+
+
+def test_byte_invariant_ok():
+    assert gt.check_byte_invariant("x.json", make_records()) == []
+
+
+def test_byte_invariant_warns_with_round():
+    recs = make_records(2)
+    recs[1]["network_bytes"] = 999
+    w = gt.check_byte_invariant("x.json", recs)
+    assert len(w) == 1
+    assert "round 1" in w[0] and "999" in w[0]
+
+
+def test_load_configs_partial_dir_warns_and_continues(tmp_path):
+    (tmp_path / "scenario_1_nominal.json").write_text(json.dumps(make_records()))
+    stats, aggs, warnings = gt.load_configs(tmp_path)
+    assert "nominal" in stats["scenario_1_nominal"]
+    assert "nominal" in aggs["scenario_1_nominal"]
+    missing = [w for w in warnings if "ausente" in w]
+    assert len(missing) == 19
+
+
+def test_load_configs_malformed_json_exits(tmp_path):
+    (tmp_path / "scenario_1_nominal.json").write_text("{nope")
+    with pytest.raises(SystemExit) as e:
+        gt.load_configs(tmp_path)
+    assert "scenario_1_nominal.json" in str(e.value)
+
+
+def test_load_configs_empty_file_warns(tmp_path):
+    (tmp_path / "scenario_1_nominal.json").write_text("[]")
+    stats, _, warnings = gt.load_configs(tmp_path)
+    assert "nominal" not in stats["scenario_1_nominal"]
+    assert any("sem rounds" in w for w in warnings)

@@ -91,3 +91,43 @@ def config_stats(records: list[dict]) -> tuple[dict, dict]:
         series = _series_for(path, records)
         stats[path] = compute_stats(series) if series else compute_stats([value])
     return am, stats
+
+
+BYTE_KEYS = ("bytes_edge_fog", "bytes_fog_intra", "bytes_fog_inter",
+             "bytes_fog_cloud")
+
+
+def check_byte_invariant(fname: str, records: list[dict]) -> list[str]:
+    warnings = []
+    for i, r in enumerate(records):
+        total = sum(r.get(k, 0) for k in BYTE_KEYS)
+        if r.get("network_bytes", 0) != total:
+            rnd = r.get("round", i)
+            warnings.append(
+                f"[AVISO] {fname} round {rnd}: network_bytes="
+                f"{r.get('network_bytes')} != soma dos elos={total}")
+    return warnings
+
+
+def load_configs(results_dir: Path):
+    stats, aggs, warnings = {}, {}, []
+    for scenario, configs in SCENARIO_CONFIGS.items():
+        stats[scenario], aggs[scenario] = {}, {}
+        for c in configs:
+            lbl = c["label"]
+            path = results_dir / expected_file(scenario, lbl)
+            if not path.exists():
+                warnings.append(f"[AVISO] arquivo ausente: {path.name}")
+                continue
+            try:
+                records = json.loads(path.read_text())
+            except json.JSONDecodeError as e:
+                raise SystemExit(f"JSON inválido em {path}: {e}")
+            if not records:
+                warnings.append(f"[AVISO] sem rounds: {path.name}")
+                continue
+            warnings += check_byte_invariant(path.name, records)
+            am, st = config_stats(records)
+            stats[scenario][lbl] = st
+            aggs[scenario][lbl] = am
+    return stats, aggs, warnings
