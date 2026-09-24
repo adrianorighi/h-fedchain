@@ -27,6 +27,8 @@ class Gradient:
 class GradientWithProof:
     gradient: Gradient
     snark_proof: Optional[SnarkProof] = None
+    prove_cpu_ms: float = 0.0
+    snark_proof_size: int = 0
 
 
 @dataclass

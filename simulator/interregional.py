@@ -47,6 +47,9 @@ class InterRegionalManager:
         # 1. Coletar outputs regionais com verificação STARK
         t0 = time.perf_counter()
         regionals: list[RegionalOutput] = []
+        # process_time: custo de CPU só das verificações STARK (exclui o
+        # tempo das rodadas dos clusters, medido separadamente).
+        verify_cpu_ms = 0.0
         for cluster in self.clusters:
             try:
                 output = await cluster.get_regional_output(round_num)
@@ -56,13 +59,16 @@ class InterRegionalManager:
                 continue
 
             if output.stark_proof is not None:
+                t_verify = time.process_time()
                 is_valid = await self.stark_verifier.verify(
                     output.stark_proof, output.stark_proof.public_inputs
                 )
+                verify_cpu_ms += (time.process_time() - t_verify) * 1000
                 if not is_valid:
                     continue
 
             regionals.append(output)
+        self.stage_times["stark_verify_regional"] = verify_cpu_ms
 
         if not regionals:
             return GlobalOutput(

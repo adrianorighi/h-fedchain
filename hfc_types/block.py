@@ -23,6 +23,8 @@ class RegionalOutput:
     pipeline_latency_ms: float = 0.0
     bytes_edge_fog: int = 0
     bytes_fog_intra: int = 0
+    proof_gen_cpu_ms: float = 0.0
+    proof_size_bytes: int = 0
 
 
 @dataclass

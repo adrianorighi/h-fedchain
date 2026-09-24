@@ -172,6 +172,35 @@ class TestEdgeWorker:
         assert len(grad) == len(flat_w), "Gradient length mismatch"
 
 
+def test_edge_worker_prove_metrics_fields():
+    """train_round records SNARK prove CPU time and proof size on the result."""
+    worker = EdgeWorker(
+        device_id="prov_dev",
+        indices=[0, 1],
+        all_data=np.zeros((4, 12, 1000), dtype=np.float64),
+        all_labels=np.zeros(4, dtype=np.int64),
+        use_snark=True,
+    )
+    weights = worker.model.get_weights()
+    result = worker.train_round(weights, round_num=0)
+    assert result.snark_proof is not None
+    assert result.prove_cpu_ms >= 0.0
+    assert result.snark_proof_size == len(result.snark_proof.proof_bytes)
+    assert result.snark_proof_size > 0
+
+
+def test_edge_worker_no_snark_defaults_zero():
+    """Without SNARK, prove metrics default to zero."""
+    data = np.random.randn(4, 12, 1000).astype(np.float64)
+    labels = np.random.randint(0, 5, size=4)
+    worker = EdgeWorker("d0", [0, 1, 2, 3], data, labels, use_snark=False)
+    weights = worker.model.get_weights()
+    result = worker.train_round(weights, round_num=0)
+    assert result.snark_proof is None
+    assert result.prove_cpu_ms == 0.0
+    assert result.snark_proof_size == 0
+
+
 def test_edge_worker_generates_snark():
     import hashlib
     import numpy as np

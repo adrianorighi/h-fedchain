@@ -12,6 +12,7 @@ por rodada sem executar a verificacao completa (estrategia B2 do artigo).
 """
 import asyncio
 import os
+import time
 from concurrent.futures import ProcessPoolExecutor
 from typing import Optional
 
@@ -43,6 +44,19 @@ def shutdown_pool():
 def prove_sync(gradient: Gradient, model_hash: bytes, sk: bytes) -> SnarkProof:
     """Gera a prova SNARK para um gradiente (executa em subprocesso)."""
     return asyncio.run(SnarkProver().generate_proof(gradient, model_hash, sk))
+
+
+def prove_timed_sync(
+    gradient: Gradient, model_hash: bytes, sk: bytes
+) -> tuple[SnarkProof, float]:
+    """Gera a prova SNARK e retorna (prova, CPU ms) no subprocesso.
+
+    process_time() mede o custo de CPU real dentro do worker (o pai não
+    enxerga o CPU time de subprocessos via process_time).
+    """
+    t0 = time.process_time()
+    proof = asyncio.run(SnarkProver().generate_proof(gradient, model_hash, sk))
+    return proof, (time.process_time() - t0) * 1000
 
 
 def verify_sync(proof: SnarkProof, model_hash: bytes, vk_bytes: bytes = b"") -> bool:

@@ -61,6 +61,21 @@ class ExperimentRunner:
         result["leader"] = self.interregional.last_leader_id
         proof_bytes = len(global_output.pi_inter.proof_bytes) if global_output.pi_inter else 0
         regionals = getattr(global_output, "regionals", None) or []
+        # Proof CPU/size: soma das rodadas regionais (SNARK prove + STARK gen
+        # da fog) + STARK inter-regional; verificação = regional (loop do
+        # InterRegionalManager) + cloud (pi_inter).
+        result["proof_gen_cpu_ms"] = (
+            sum(getattr(r, "proof_gen_cpu_ms", 0.0) for r in regionals)
+            + self.interregional.stage_times.get("stark_gen_inter", 0.0)
+        )
+        result["proof_verify_cpu_ms"] = (
+            self.interregional.stage_times.get("stark_verify_regional", 0.0)
+            + result.get("stark_verify_cloud_ms", 0.0)
+        )
+        result["proof_size_bytes"] = (
+            sum(getattr(r, "proof_size_bytes", 0) for r in regionals)
+            + proof_bytes
+        )
         result["bytes_edge_fog"] = sum(
             getattr(r, "bytes_edge_fog", 0) for r in regionals
         )

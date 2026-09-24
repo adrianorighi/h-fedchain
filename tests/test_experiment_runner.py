@@ -43,3 +43,24 @@ async def test_multi_cluster_run():
             r["bytes_edge_fog"] + r["bytes_fog_intra"]
             + r["bytes_fog_inter"] + r["bytes_fog_cloud"]
         )
+
+
+@pytest.mark.asyncio
+async def test_multi_cluster_proof_metrics():
+    """Multi-cluster round exposes proof gen/verify CPU and proof size keys."""
+    clusters = [
+        Cluster("c0", nodes_per_cluster=2, devices_per_cluster=3, f=0, latency_ms=1.0),
+        Cluster("c1", nodes_per_cluster=2, devices_per_cluster=3, f=0, latency_ms=1.0),
+    ]
+    cloud = CloudComponent()
+    runner = ExperimentRunner(clusters, cloud, f=0)
+    result = await runner.run_round(round_num=1)
+    required = {"proof_gen_cpu_ms", "proof_verify_cpu_ms", "proof_size_bytes"}
+    assert required <= set(result), f"Missing keys: {required - set(result)}"
+    assert result["proof_gen_cpu_ms"] >= 0
+    assert result["proof_verify_cpu_ms"] >= 0
+    assert result["proof_size_bytes"] >= 0
+    # inter-regional STARK proof (pi_inter) is always generated
+    assert result["proof_size_bytes"] > 0
+    # cloud verifies pi_inter -> non-zero verify CPU
+    assert result["proof_verify_cpu_ms"] > 0

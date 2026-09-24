@@ -1,4 +1,5 @@
 import hashlib
+import time
 import numpy as np
 from typing import Optional
 from hfc_types.messages import Gradient, GradientWithProof
@@ -90,16 +91,28 @@ class EdgeWorker:
         )
 
         snark_proof: Optional[SnarkProof] = None
+        prove_cpu_ms = 0.0
+        snark_proof_size = 0
         if self.use_snark and hasattr(self, 'snark_prover'):
             model_hash = hashlib.sha256(
                 str(sorted(global_weights.items())).encode()
             ).digest()
             import asyncio
+            # process_time: CPU-only cost of proof generation (Edge is
+            # synchronous here, so CPU ≈ wall for this block).
+            t_prove = time.process_time()
             snark_proof = asyncio.run(
                 self.snark_prover.generate_proof(gradient, model_hash, self.sk)
             )
+            prove_cpu_ms = (time.process_time() - t_prove) * 1000
+            snark_proof_size = len(snark_proof.proof_bytes)
 
-        return GradientWithProof(gradient=gradient, snark_proof=snark_proof)
+        return GradientWithProof(
+            gradient=gradient,
+            snark_proof=snark_proof,
+            prove_cpu_ms=prove_cpu_ms,
+            snark_proof_size=snark_proof_size,
+        )
 
     def save_local_data(self, X, y, path: str):
         import pickle

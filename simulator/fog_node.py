@@ -73,7 +73,16 @@ class FogNode:
 
     async def verify_block(self, block: Block) -> bool:
         if self._variant in ("stark", "full") and block.stark_proof is not None:
-            return await self.stark_verifier.verify(block.stark_proof, block.stark_proof.public_inputs)
+            # process_time: custo de CPU da verificação STARK (CPU-bound).
+            t0 = time.process_time()
+            ok = await self.stark_verifier.verify(
+                block.stark_proof, block.stark_proof.public_inputs
+            )
+            self.stage_times["stark_verify"] = (
+                self.stage_times.get("stark_verify", 0.0)
+                + (time.process_time() - t0) * 1000
+            )
+            return ok
         return True
 
     async def process_round(

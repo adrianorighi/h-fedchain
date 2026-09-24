@@ -1,4 +1,5 @@
 from typing import Optional
+import time
 from zkp.stark import StarkVerifier
 from hfc_types.block import GlobalOutput
 from core.ledger.worm_store import WormStore
@@ -51,11 +52,15 @@ class CloudComponent:
 
     async def _process_impl(self, global_output: GlobalOutput) -> dict:
         stark_verified = True
+        # process_time: custo de CPU da verificação STARK inter-regional.
+        stark_verify_cloud_ms = 0.0
         if global_output.pi_inter is not None:
+            t_verify = time.process_time()
             is_valid = await self.stark_verifier.verify(
                 global_output.pi_inter,
                 global_output.pi_inter.public_inputs,
             )
+            stark_verify_cloud_ms = (time.process_time() - t_verify) * 1000
             self.audit_logger.log("STARK_VERIFY", "cloud", global_output.round_num,
                                   {"verified": is_valid, "n_active_clusters": global_output.n_active_clusters})
             if not is_valid:
@@ -64,6 +69,7 @@ class CloudComponent:
                     "n_active_clusters": 0,
                     "converged": self.converged,
                     "stark_verified": False,
+                    "stark_verify_cloud_ms": stark_verify_cloud_ms,
                 }
 
         self.worm.append(global_output)
@@ -74,4 +80,5 @@ class CloudComponent:
             "n_active_clusters": global_output.n_active_clusters,
             "converged": self.converged,
             "stark_verified": stark_verified,
+            "stark_verify_cloud_ms": stark_verify_cloud_ms,
         }

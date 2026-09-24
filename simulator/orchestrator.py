@@ -208,18 +208,21 @@ class Orchestrator:
     async def _attach_snark_proofs(
         self, grads: list[GradientWithProof], sk_map: dict[int, bytes]
     ):
-        from simulator.snark_worker import get_pool, prove_sync
+        from simulator.snark_worker import get_pool, prove_timed_sync
 
         loop = asyncio.get_event_loop()
         model_hash = b""
         tasks = {
             d: loop.run_in_executor(
-                get_pool(), prove_sync, grads[d].gradient, model_hash, sk,
+                get_pool(), prove_timed_sync, grads[d].gradient, model_hash, sk,
             )
             for d, sk in sk_map.items()
         }
         for d, fut in tasks.items():
-            grads[d].snark_proof = await fut
+            proof, prove_cpu_ms = await fut
+            grads[d].snark_proof = proof
+            grads[d].prove_cpu_ms = prove_cpu_ms
+            grads[d].snark_proof_size = len(proof.proof_bytes)
 
     def _generate_real_gradients(self, round_num: int) -> list[GradientWithProof]:
         grads = []
@@ -326,6 +329,26 @@ class Orchestrator:
         ]
         loss = float(np.mean([np.linalg.norm(g) for g in valid_grads_list])) if valid_grads_list else 0.0
 
+        # Proof CPU / size. SNARK prove é medido com process_time na Edge
+        # (prove_cpu_ms); stark_gen reutiliza a stage existente medida com
+        # perf_counter (wall-proxy, CPU-bound perto de wall — escolha
+        # documentada para não re-medir o estágio já instrumentado).
+        snark_gen_ms = sum(getattr(g, "prove_cpu_ms", 0.0) for g in grads)
+        stark_gen_ms = leader_node.stage_times.get("stark_gen", 0.0)
+        proof_gen_cpu_ms = snark_gen_ms + stark_gen_ms
+
+        proof_verify_cpu_ms = (
+            leader_node.stage_times.get("stark_verify", 0.0)
+            + leader_node.stage_times.get("stark_verify_regional", 0.0)
+        )
+
+        snark_size = sum(getattr(g, "snark_proof_size", 0) for g in grads)
+        stark_size = (
+            len(block.stark_proof.proof_bytes)
+            if block is not None and block.stark_proof else 0
+        )
+        proof_size_bytes = snark_size + stark_size
+
         return {
             "round": round_num,
             "leader": leader_id,
@@ -360,6 +383,9 @@ class Orchestrator:
             "snark_sampled_verified": 1 if snark_sampled_verified else 0,
             "snark_sampled_passed": int(bool(snark_sample_ok)) if snark_sampled_verified else 0,
             "snark_verify_projected_ms": snark_verify_projected_ms,
+            "proof_gen_cpu_ms": proof_gen_cpu_ms,
+            "proof_verify_cpu_ms": proof_verify_cpu_ms,
+            "proof_size_bytes": proof_size_bytes,
             "stark_proof_generated": block.stark_proof is not None,
             "global_weights": self._global_weights.copy() if self._global_weights else {},
             "loss": loss,
@@ -437,7 +463,9 @@ class Orchestrator:
             return {"round": round_num, "latency": 0, "qc_emitted": False,
                     "bytes_edge_fog": 0, "bytes_fog_intra": 0,
                     "bytes_fog_inter": 0, "bytes_fog_cloud": 0,
-                    "network_bytes": 0}
+                    "network_bytes": 0,
+                    "proof_gen_cpu_ms": 0.0, "proof_verify_cpu_ms": 0.0,
+                    "proof_size_bytes": 0}
 
         inter_node_selected: list[int] | None = None
         delta_w_reg: list[float] | None = None
@@ -484,7 +512,9 @@ class Orchestrator:
             return {"round": round_num, "latency": 0, "qc_emitted": False,
                     "bytes_edge_fog": 0, "bytes_fog_intra": 0,
                     "bytes_fog_inter": 0, "bytes_fog_cloud": 0,
-                    "network_bytes": 0}
+                    "network_bytes": 0,
+                    "proof_gen_cpu_ms": 0.0, "proof_verify_cpu_ms": 0.0,
+                    "proof_size_bytes": 0}
 
         vk_map = {n.node_id: n.vk for n in self.nodes}
         CONSENSUS_TIMEOUT = 5.0
@@ -535,7 +565,9 @@ class Orchestrator:
             return {"round": round_num, "latency": 0, "qc_emitted": False,
                     "bytes_edge_fog": 0, "bytes_fog_intra": 0,
                     "bytes_fog_inter": 0, "bytes_fog_cloud": 0,
-                    "network_bytes": 0}
+                    "network_bytes": 0,
+                    "proof_gen_cpu_ms": 0.0, "proof_verify_cpu_ms": 0.0,
+                    "proof_size_bytes": 0}
 
         qc_pre_commit = await _try_phase("pre_commit", lambda: _pre_commit_phase(qc_prepare))
         if qc_pre_commit is None:
@@ -547,7 +579,9 @@ class Orchestrator:
             return {"round": round_num, "latency": 0, "qc_emitted": False,
                     "bytes_edge_fog": 0, "bytes_fog_intra": 0,
                     "bytes_fog_inter": 0, "bytes_fog_cloud": 0,
-                    "network_bytes": 0}
+                    "network_bytes": 0,
+                    "proof_gen_cpu_ms": 0.0, "proof_verify_cpu_ms": 0.0,
+                    "proof_size_bytes": 0}
 
         qc_commit = await _try_phase("commit", lambda: _commit_phase(qc_pre_commit))
         if qc_commit is None:
@@ -559,14 +593,18 @@ class Orchestrator:
             return {"round": round_num, "latency": 0, "qc_emitted": False,
                     "bytes_edge_fog": 0, "bytes_fog_intra": 0,
                     "bytes_fog_inter": 0, "bytes_fog_cloud": 0,
-                    "network_bytes": 0}
+                    "network_bytes": 0,
+                    "proof_gen_cpu_ms": 0.0, "proof_verify_cpu_ms": 0.0,
+                    "proof_size_bytes": 0}
 
         entry = await leader_node.finalize_commit(qc_commit, proposed_block)
         if entry is None:
             return {"round": round_num, "latency": 0, "qc_emitted": False,
                     "bytes_edge_fog": 0, "bytes_fog_intra": 0,
                     "bytes_fog_inter": 0, "bytes_fog_cloud": 0,
-                    "network_bytes": 0}
+                    "network_bytes": 0,
+                    "proof_gen_cpu_ms": 0.0, "proof_verify_cpu_ms": 0.0,
+                    "proof_size_bytes": 0}
 
         block = entry.block
 

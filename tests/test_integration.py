@@ -112,6 +112,28 @@ async def test_directional_bytes_single_cluster():
 
 
 @pytest.mark.asyncio
+async def test_proof_metrics_single_cluster():
+    """Single-cluster round exposes proof gen/verify CPU and proof size keys."""
+    orch = Orchestrator(
+        nodes_per_cluster=4,
+        devices_per_cluster=4,
+        f=1,
+        latency_ms=1.0,
+        variant="stark",
+    )
+    result = await orch.run_experiment(num_rounds=1, warmup=0)
+    m = result.round_metrics[0]
+    required = {"proof_gen_cpu_ms", "proof_verify_cpu_ms", "proof_size_bytes"}
+    assert required <= set(m), f"Missing keys: {required - set(m)}"
+    assert m["proof_gen_cpu_ms"] >= 0
+    assert m["proof_verify_cpu_ms"] >= 0
+    assert m["proof_size_bytes"] >= 0
+    # variant "stark" commits a block with a STARK proof every round
+    assert m["proof_size_bytes"] > 0
+    assert m["proof_gen_cpu_ms"] > 0
+
+
+@pytest.mark.asyncio
 async def test_multi_cluster_experiment_runner():
     """4 clusters, 1 round: Cluster → InterRegional → Cloud flow"""
     from simulator.cluster import Cluster

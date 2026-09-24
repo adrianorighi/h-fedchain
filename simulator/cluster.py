@@ -68,4 +68,6 @@ class Cluster:
             pipeline_latency_ms=result.get("latency", 0.0) * 1000,
             bytes_edge_fog=result.get("bytes_edge_fog", 0),
             bytes_fog_intra=result.get("bytes_fog_intra", 0),
+            proof_gen_cpu_ms=result.get("proof_gen_cpu_ms", 0.0),
+            proof_size_bytes=result.get("proof_size_bytes", 0),
         )
