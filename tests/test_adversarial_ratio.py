@@ -1,6 +1,9 @@
+import asyncio
+
 from experiments.analyze_results import S3_RATIOS as ANALYZE_S3
 from experiments.batch_runner import S3_RATIOS as BATCH_S3
 from experiments.scenario_3_adversarial import QUICK_RATIOS, RATIOS
+from simulator.orchestrator import Orchestrator, select_adversarial_ids
 
 EXPECTED = [0.0, 0.10, 0.20, 0.30, 0.40]
 
@@ -17,11 +20,6 @@ def test_s3_ratios_scenario():
     assert RATIOS == EXPECTED
     assert 0.05 not in RATIOS
     assert QUICK_RATIOS == [0.0, 0.20]
-
-
-import asyncio
-
-from simulator.orchestrator import Orchestrator, select_adversarial_ids
 
 
 def test_select_adversarial_ids():
@@ -42,7 +40,7 @@ async def _run(ratio: float):
         variant="no_zkp", adversarial_ratio=ratio,
         snark_prove=False,
     )
-    return await orch.run_experiment(num_rounds=1)
+    return await orch.run_experiment(num_rounds=1, warmup=0)
 
 
 def test_adv_count_is_ratio_of_total():
@@ -52,5 +50,5 @@ def test_adv_count_is_ratio_of_total():
         expected = int(200 * ratio)
         assert m["num_adversarial"] == expected
         assert m["num_honest"] == 200 - expected
-        # rejected cannot exceed ground truth
-        assert m["rejected_adversarial"] <= expected or expected == 0
+        # synthetic path: all adversaries are PKI-rejected
+        assert m["rejected_adversarial"] == m["num_adversarial"]

@@ -21,6 +21,8 @@ from dataset.edge_worker import EdgeWorker
 
 
 def select_adversarial_ids(total: int, ratio: float, seed: int) -> set[int]:
+    if not 0.0 <= ratio <= 1.0:
+        raise ValueError(f"adversarial ratio must be in [0, 1], got {ratio}")
     n = int(total * ratio)
     if n <= 0:
         return set()
@@ -221,13 +223,14 @@ class Orchestrator:
 
     def _generate_real_gradients(self, round_num: int) -> list[GradientWithProof]:
         grads = []
-        for idx, worker in enumerate(self.edge_workers):
+        for worker in self.edge_workers:
             gwp = worker.train_round(
                 self._global_weights,
                 round_num=round_num,
             )
             if worker.is_adversarial:
-                gwp.gradient.node_id = f"adv_{idx}"
+                dev_idx = int(worker.device_id[1:])
+                gwp.gradient.node_id = f"adv_{dev_idx}"
             grads.append(gwp)
         return grads
 
@@ -258,18 +261,17 @@ class Orchestrator:
                        snark_sample_ok: Optional[bool] = None,
                        snark_sampled_verified: bool = False) -> dict:
         total_dev = self.devices_per_cluster * self.num_clusters
-        # Every fog node in the group processes the same gradient set:
-        # de-duplicate with max across nodes, then sum across groups.
-        # Orchestrator runs a single fog group (all nodes see all grads).
-        cluster_results_grouped: list[list[AggregateGradient]] = [cluster_results]
-        rej_adv = sum(
-            max((r.rejected_adversarial for r in ags), default=0)
-            for ags in cluster_results_grouped
-        )
-        rej_hon = sum(
-            max((r.rejected_honest for r in ags), default=0)
-            for ags in cluster_results_grouped
-        )
+        if self.use_dataset and self.edge_workers:
+            # Devices with empty partitions are skipped in _init_dataset,
+            # so ground truth must count actual workers, not nominal total.
+            num_adv = sum(1 for w in self.edge_workers if w.is_adversarial)
+            num_hon = len(self.edge_workers) - num_adv
+        else:
+            num_adv = len(self._adv_ids)
+            num_hon = total_dev - num_adv
+        # all fog nodes process the same grads; take max to avoid 5× sum
+        rej_adv = max((r.rejected_adversarial for r in cluster_results), default=0)
+        rej_hon = max((r.rejected_honest for r in cluster_results), default=0)
 
         leader_node = next(n for n in self.nodes if n.node_id == leader_id)
 
@@ -333,8 +335,8 @@ class Orchestrator:
             "num_rejected": len(block.rejected_devices),
             "ledger_height": self.nodes[0].ledger.get_height(),
             "qc_emitted": True,
-            "num_adversarial": len(self._adv_ids),
-            "num_honest": total_dev - len(self._adv_ids),
+            "num_adversarial": num_adv,
+            "num_honest": num_hon,
             "rejected_adversarial": rej_adv,
             "falsely_rejected": rej_hon,
             "variant": self.variant,
