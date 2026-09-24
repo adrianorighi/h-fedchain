@@ -247,3 +247,50 @@ def test_resultados_tex_escapes_percent_and_columns(tmp_path):
     for ln in data_rows:
         assert ln.count("&") == ncols - 1
         assert re.search(r"(?<!\\)%", ln) is None, f"unescaped % em: {ln}"
+
+
+def test_build_comparison_full(tmp_path):
+    for slug in ("h_fedchain", "fedsdm", "flcoin"):
+        (tmp_path / f"comparison_nominal_{slug}.json").write_text(
+            json.dumps(make_records(3)))
+    tex, collectors, warnings = gt.build_comparison(tmp_path)
+    assert r"\begin{table}" in tex
+    assert "tab:comparison_nominal" in tex
+    assert set(collectors) == {"H-FedChain", "FedSDM", "FLCoin"}
+
+
+def test_build_comparison_missing_all(tmp_path):
+    tex, collectors, warnings = gt.build_comparison(tmp_path)
+    assert tex is None and collectors == {}
+    assert any("comparação ausente" in w for w in warnings)
+
+
+def _make_batch(tmp_path):
+    import experiments.analyze_results as ar
+    for lbl in ("rho_0", "rho_5", "rho_20"):
+        d = tmp_path / "scenario_3_adversarial" / lbl
+        d.mkdir(parents=True)
+        for i in range(2):
+            (d / f"run_{i}_metrics.json").write_text(json.dumps({
+                "avg_latency": 1.0 + i, "consensus_time_ms": 100.0,
+                "stage_time_ms": {"stark_gen": 10.0},
+                "detection_rate": 1.0}))
+            (d / f"run_{i}_rounds.json").write_text("[]")
+    return ar
+
+
+def test_batch_reference_excludes_rho5(tmp_path, monkeypatch):
+    ar = _make_batch(tmp_path)
+    monkeypatch.setattr(ar, "RUNS_DIR", tmp_path)
+    rows = gt.build_batch_reference()
+    labels = {r["config"] for r in rows}
+    assert "rho_5" not in labels
+    assert {"rho_0", "rho_20"} <= labels
+    assert all(r["n"] == 2 for r in rows)
+    assert any(r["metric"] == "core_latency" for r in rows)
+
+
+def test_batch_reference_empty_runs_dir(tmp_path, monkeypatch):
+    import experiments.analyze_results as ar
+    monkeypatch.setattr(ar, "RUNS_DIR", tmp_path / "nope")
+    assert gt.build_batch_reference() == []

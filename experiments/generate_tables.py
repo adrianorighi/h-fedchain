@@ -265,3 +265,66 @@ def build_overhead_tex(stats: dict) -> str:
             lines.append(" & ".join(row) + r" \\")
     lines += [r"\bottomrule", r"\end{tabular}%", r"}", r"\end{table}"]
     return "\n".join(lines)
+
+
+COMPARISON_SYSTEMS = {"h_fedchain": "H-FedChain", "fedsdm": "FedSDM",
+                      "flcoin": "FLCoin"}
+
+COMPARISON_METRICS = [
+    ("Latência média (s)", "avg_latency"),
+    ("Taxa de sucesso consenso", "consensus_success"),
+    ("Taxa de detecção (DR)", "detection_rate"),
+    ("Taxa de falso positivo (FPR)", "false_positive_rate"),
+    ("Throughput (blocos/min)", "throughput"),
+    ("Tamanho do bloco (bytes)", "block_size_bytes"),
+    ("Tempo de consenso (ms)", "consensus_time_ms"),
+    ("Uniformidade VRF", "vrf_uniformity"),
+    ("Completude", "compliance"),
+]
+
+
+def build_comparison(results_dir: Path):
+    from experiments.comparison import build_latex_table
+    collectors, warnings = {}, []
+    for slug, display in COMPARISON_SYSTEMS.items():
+        path = results_dir / f"comparison_nominal_{slug}.json"
+        if not path.exists():
+            warnings.append(f"[AVISO] comparação ausente: {path.name}")
+            continue
+        records = json.loads(path.read_text())
+        if not records:
+            warnings.append(f"[AVISO] comparação vazia: {path.name}")
+            continue
+        mc = MetricsCollector()
+        for r in records:
+            mc.add_round(r)
+        collectors[display] = mc
+    if not collectors:
+        return None, collectors, warnings
+    tex = build_latex_table(collectors, COMPARISON_METRICS)
+    return tex, collectors, warnings
+
+
+def build_batch_reference() -> list[dict]:
+    import experiments.analyze_results as ar
+    rows = []
+    for scenario, configs in SCENARIO_CONFIGS.items():
+        for c in configs:
+            runs = ar.load_runs(scenario, c["label"])
+            if not runs:
+                continue
+            metrics = []
+            for r in runs:
+                m = dict(r["metrics"])
+                m["core_latency"] = ar.core_latency(m)
+                metrics.append(m)
+            for p in ar.metric_paths(metrics):
+                vals = [ar._flatten(m).get(p, 0) for m in metrics]
+                if all(isinstance(v, (int, float)) for v in vals):
+                    st = ar.compute_stats(vals)
+                    rows.append({
+                        "scenario": scenario, "config": c["label"],
+                        "metric": p, "mean": st["mean"], "std": st["std"],
+                        "n": st["n"],
+                    })
+    return rows
