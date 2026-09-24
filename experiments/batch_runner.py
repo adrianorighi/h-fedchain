@@ -29,7 +29,7 @@ from experiments import scenario_5_zkp_overhead
 RUNS_DIR = Path(__file__).parent.parent / "results" / "runs"
 
 S2_SIZES = [10, 25, 50, 75, 100]
-S3_RATIOS = [0.0, 0.05, 0.10, 0.20, 0.30, 0.40]
+S3_RATIOS = [0.0, 0.10, 0.20, 0.30, 0.40]
 S4_CLUSTERS = [2, 4, 8, 12, 16]
 S5_VARIANTS = ["no_zkp", "snark", "stark", "full"]
 

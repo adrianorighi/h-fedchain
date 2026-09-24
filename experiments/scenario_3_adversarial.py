@@ -31,7 +31,7 @@ async def run_adv(adversarial_ratio: float, tracer=None, use_dataset=False, quic
 
 async def run(tracer=None, use_dataset=False, quick=False):
     collectors = []
-    ratios = [0.0, 0.05, 0.10, 0.20, 0.30, 0.40] if not quick else [0.0, 0.20]
+    ratios = [0.0, 0.10, 0.20, 0.30, 0.40] if not quick else [0.0, 0.20]
     for r in ratios:
         mc = await run_adv(r, tracer=tracer, use_dataset=use_dataset, quick=quick)
         collectors.append(mc)
