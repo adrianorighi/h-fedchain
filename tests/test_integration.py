@@ -88,6 +88,28 @@ async def test_multi_round_multi_node_consensus():
 
 
 @pytest.mark.asyncio
+async def test_directional_bytes_single_cluster():
+    """Single-cluster round exposes the 5 directional network byte keys."""
+    orch = Orchestrator(
+        nodes_per_cluster=4,
+        devices_per_cluster=4,
+        f=1,
+        latency_ms=1.0,
+    )
+    orch.setup()
+    result = await orch.run_round(round_num=1)
+    required = {"bytes_edge_fog", "bytes_fog_inter", "bytes_fog_cloud",
+                "network_bytes", "bytes_fog_intra"}
+    assert required <= set(result), f"Missing keys: {required - set(result)}"
+    assert result["bytes_fog_inter"] == 0
+    assert result["bytes_fog_cloud"] == 0
+    assert result["bytes_edge_fog"] >= 0
+    assert result["bytes_fog_intra"] >= 0
+    assert result["network_bytes"] >= 0
+    assert result["network_bytes"] == result["comm_overhead_bytes"]
+
+
+@pytest.mark.asyncio
 async def test_multi_cluster_experiment_runner():
     """4 clusters, 1 round: Cluster → InterRegional → Cloud flow"""
     from simulator.cluster import Cluster

@@ -1,4 +1,5 @@
 import hashlib
+import pickle
 import time
 from typing import Optional
 import numpy as np
@@ -143,12 +144,20 @@ class InterRegionalManager:
         self.ledger.append(round_num, delta_w_inter_bytes, pi_inter.proof_bytes,
                           [r.cluster_id for r in regionals])
 
+        # Bytes inter-cluster (fog→fog): payload delta_w dos regionais +
+        # modelo consolidado votado (n_active * 64 bytes por voto)
+        bytes_fog_inter = (
+            sum(len(pickle.dumps(r.delta_w)) for r in regionals)
+            + len(regionals) * 64
+        )
+
         return GlobalOutput(
             delta_w_inter=delta_w_inter_bytes,
             pi_inter=pi_inter,
             n_active_clusters=len(regionals),
             round_num=round_num,
             regionals=regionals,
+            bytes_fog_inter=bytes_fog_inter,
         )
 
     def _elect_leader_vrf(self, candidates: list[str], seed: bytes) -> str:

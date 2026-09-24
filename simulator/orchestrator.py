@@ -331,6 +331,11 @@ class Orchestrator:
             "consensus_time_ms": (t_end - t_start) * 1000,
             "block_size_bytes": len(pickle.dumps(block)),
             "comm_overhead_bytes": comm_overhead,
+            "bytes_edge_fog": edge_fog_bytes,
+            "bytes_fog_intra": inter_node_bytes,
+            "bytes_fog_inter": 0,
+            "bytes_fog_cloud": 0,
+            "network_bytes": edge_fog_bytes + inter_node_bytes + block_bytes,
             "num_accepted": len(block.accepted_devices),
             "num_rejected": len(block.rejected_devices),
             "ledger_height": self.nodes[0].ledger.get_height(),
@@ -427,7 +432,10 @@ class Orchestrator:
                 cluster_results.append(result)
 
         if not cluster_results:
-            return {"round": round_num, "latency": 0, "qc_emitted": False}
+            return {"round": round_num, "latency": 0, "qc_emitted": False,
+                    "bytes_edge_fog": 0, "bytes_fog_intra": 0,
+                    "bytes_fog_inter": 0, "bytes_fog_cloud": 0,
+                    "network_bytes": 0}
 
         inter_node_selected: list[int] | None = None
         delta_w_reg: list[float] | None = None
@@ -471,7 +479,10 @@ class Orchestrator:
 
         proposal = await leader_node.hotstuff.propose(proposed_block)
         if proposal is None:
-            return {"round": round_num, "latency": 0, "qc_emitted": False}
+            return {"round": round_num, "latency": 0, "qc_emitted": False,
+                    "bytes_edge_fog": 0, "bytes_fog_intra": 0,
+                    "bytes_fog_inter": 0, "bytes_fog_cloud": 0,
+                    "network_bytes": 0}
 
         vk_map = {n.node_id: n.vk for n in self.nodes}
         CONSENSUS_TIMEOUT = 5.0
@@ -519,7 +530,10 @@ class Orchestrator:
                     node.audit_logger.log("VIEW_CHANGE", node.node_id, round_num,
                                           {"reason": "prepare_timeout", "leader": leader_id})
                     node.view_change.should_change_view(timeout=True)
-            return {"round": round_num, "latency": 0, "qc_emitted": False}
+            return {"round": round_num, "latency": 0, "qc_emitted": False,
+                    "bytes_edge_fog": 0, "bytes_fog_intra": 0,
+                    "bytes_fog_inter": 0, "bytes_fog_cloud": 0,
+                    "network_bytes": 0}
 
         qc_pre_commit = await _try_phase("pre_commit", lambda: _pre_commit_phase(qc_prepare))
         if qc_pre_commit is None:
@@ -528,7 +542,10 @@ class Orchestrator:
                     node.audit_logger.log("VIEW_CHANGE", node.node_id, round_num,
                                           {"reason": "pre_commit_timeout", "leader": leader_id})
                     node.view_change.should_change_view(timeout=True)
-            return {"round": round_num, "latency": 0, "qc_emitted": False}
+            return {"round": round_num, "latency": 0, "qc_emitted": False,
+                    "bytes_edge_fog": 0, "bytes_fog_intra": 0,
+                    "bytes_fog_inter": 0, "bytes_fog_cloud": 0,
+                    "network_bytes": 0}
 
         qc_commit = await _try_phase("commit", lambda: _commit_phase(qc_pre_commit))
         if qc_commit is None:
@@ -537,11 +554,17 @@ class Orchestrator:
                     node.audit_logger.log("VIEW_CHANGE", node.node_id, round_num,
                                           {"reason": "commit_timeout", "leader": leader_id})
                     node.view_change.should_change_view(timeout=True)
-            return {"round": round_num, "latency": 0, "qc_emitted": False}
+            return {"round": round_num, "latency": 0, "qc_emitted": False,
+                    "bytes_edge_fog": 0, "bytes_fog_intra": 0,
+                    "bytes_fog_inter": 0, "bytes_fog_cloud": 0,
+                    "network_bytes": 0}
 
         entry = await leader_node.finalize_commit(qc_commit, proposed_block)
         if entry is None:
-            return {"round": round_num, "latency": 0, "qc_emitted": False}
+            return {"round": round_num, "latency": 0, "qc_emitted": False,
+                    "bytes_edge_fog": 0, "bytes_fog_intra": 0,
+                    "bytes_fog_inter": 0, "bytes_fog_cloud": 0,
+                    "network_bytes": 0}
 
         block = entry.block
 

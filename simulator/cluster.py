@@ -66,4 +66,6 @@ class Cluster:
             snark_verify_projected_ms=result.get("snark_verify_projected_ms", 0.0),
             snark_sampled_passed=result.get("snark_sampled_passed", 1),
             pipeline_latency_ms=result.get("latency", 0.0) * 1000,
+            bytes_edge_fog=result.get("bytes_edge_fog", 0),
+            bytes_fog_intra=result.get("bytes_fog_intra", 0),
         )

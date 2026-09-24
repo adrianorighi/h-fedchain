@@ -21,6 +21,8 @@ class RegionalOutput:
     snark_verify_projected_ms: float = 0.0
     snark_sampled_passed: int = 1
     pipeline_latency_ms: float = 0.0
+    bytes_edge_fog: int = 0
+    bytes_fog_intra: int = 0
 
 
 @dataclass
@@ -30,6 +32,7 @@ class GlobalOutput:
     n_active_clusters: int
     round_num: int
     regionals: list["RegionalOutput"] = field(default_factory=list)
+    bytes_fog_inter: int = 0
 
 
 @dataclass

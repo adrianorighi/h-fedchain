@@ -60,7 +60,23 @@ class ExperimentRunner:
         result["stage_time_ms"] = self.interregional.stage_times
         result["leader"] = self.interregional.last_leader_id
         proof_bytes = len(global_output.pi_inter.proof_bytes) if global_output.pi_inter else 0
-        result["comm_overhead_bytes"] = result["block_size_bytes"] + proof_bytes + global_output.n_active_clusters * 64
+        regionals = getattr(global_output, "regionals", None) or []
+        result["bytes_edge_fog"] = sum(
+            getattr(r, "bytes_edge_fog", 0) for r in regionals
+        )
+        result["bytes_fog_intra"] = sum(
+            getattr(r, "bytes_fog_intra", 0) for r in regionals
+        )
+        result["bytes_fog_inter"] = getattr(global_output, "bytes_fog_inter", 0)
+        result["bytes_fog_cloud"] = (
+            result["block_size_bytes"] + proof_bytes
+            + global_output.n_active_clusters * 64
+        )
+        result["network_bytes"] = (
+            result["bytes_edge_fog"] + result["bytes_fog_intra"]
+            + result["bytes_fog_inter"] + result["bytes_fog_cloud"]
+        )
+        result["comm_overhead_bytes"] = result["bytes_fog_cloud"]
         result["loss"] = self.interregional.last_loss
         result["model_accuracy"] = 0.0  # inter-regional has no ground truth
         result["snark_proofs_total"] = sum(
