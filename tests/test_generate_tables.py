@@ -197,3 +197,38 @@ def test_config_rows_derive_from_stats_not_aggregate():
     assert am["stage_time_ms"]["stark_gen"] == pytest.approx(0.5)
     rows = gt.config_rows({"s": {"c": st}})
     assert rows[0]["stage_time_ms.stark_gen"] == pytest.approx((0.5 + 0.5 + 0.0) / 3)
+
+
+def test_resultados_tex_contains_all_rows(tmp_path):
+    _write_all_configs(tmp_path)
+    stats, _, _ = gt.load_configs(tmp_path)
+    tex = gt.build_resultados_tex(stats)
+    assert r"\begin{table}" in tex
+    assert "tab:resultados" in tex
+    assert "1 Nominal" in tex
+    assert "2 d100" in tex
+    assert r"3 $\rho$=40\%" in tex
+    assert "4 c16" in tex
+    assert "5 full" in tex
+    assert "$\\pm$" in tex
+
+
+def test_resultados_tex_skips_missing_config(tmp_path):
+    (tmp_path / "scenario_1_nominal.json").write_text(json.dumps(make_records()))
+    stats, _, _ = gt.load_configs(tmp_path)
+    tex = gt.build_resultados_tex(stats)
+    assert "1 Nominal" in tex
+    assert "2 d10" not in tex
+
+
+def test_overhead_tex_new_metrics(tmp_path):
+    _write_all_configs(tmp_path)
+    stats, _, _ = gt.load_configs(tmp_path)
+    tex = gt.build_overhead_tex(stats)
+    assert r"\begin{table}" in tex
+    assert "tab:overhead" in tex
+    for hdr in ("CPU (\\%)", "Mem. (MB)", "Rede (MB)", "Proof gen (s)",
+                "Proof verif. (ms)", "Proof tam. (KB)",
+                "Fog$\\leftrightarrow$inter (MB)"):
+        assert hdr in tex
+    assert "1 Nominal" in tex and "5 stark" in tex

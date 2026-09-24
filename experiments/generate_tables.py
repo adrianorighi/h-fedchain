@@ -192,3 +192,75 @@ def config_fields(stats: dict) -> list[str]:
         for metrics in cfgs.values():
             keys.update(metrics.keys())
     return ["scenario", "config"] + sorted(keys)
+
+
+def build_resultados_tex(stats: dict) -> str:
+    lines = [
+        r"\begin{table}[htbp]",
+        r"\caption{Resultados experimentais da arquitetura H-FedChain. "
+        r"Média $\pm$ desvio padrão calculados sobre as rodadas de uma "
+        r"única execução por configuração.}",
+        r"\label{tab:resultados}",
+        r"\centering",
+        r"\resizebox{\textwidth}{!}{%",
+        r"\begin{tabular}{l" + "c" * (len(TABLE_HEADERS) - 1) + "}",
+        r"\toprule",
+        " & ".join(TABLE_HEADERS) + r" \\ \midrule",
+    ]
+    for scenario, configs in SCENARIO_CONFIGS.items():
+        lat_metric = ("core_latency" if scenario == "scenario_2_scalability"
+                      else "avg_latency")
+        for c in configs:
+            lbl = c["label"]
+            if lbl not in stats.get(scenario, {}):
+                continue
+            st = stats[scenario][lbl]
+            row = [CONFIG_ROW_LABEL[scenario](c)]
+            for m in TABLE_METRICS:
+                key = lat_metric if m == "avg_latency" else m
+                row.append(fmt_cell(key, st.get(key, compute_stats([0.0]))))
+            lines.append(" & ".join(row) + r" \\")
+    lines += [r"\bottomrule", r"\end{tabular}%", r"}", r"\end{table}"]
+    return "\n".join(lines)
+
+
+OVERHEAD_COLS = [
+    ("CPU (\\%)", "cpu_percent", lambda v: f"{v:.1f}"),
+    ("Mem. (MB)", "memory_rss_bytes", lambda v: f"{v / 1e6:.1f}"),
+    ("Rede (MB)", "network_bytes", lambda v: f"{v / 1e6:.2f}"),
+    ("Edge$\\leftrightarrow$Fog (MB)", "mb_edge_fog", lambda v: f"{v:.2f}"),
+    ("Fog$\\leftrightarrow$inter (MB)", "mb_fog_inter", lambda v: f"{v:.2f}"),
+    ("Fog$\\leftrightarrow$Cloud (MB)", "mb_fog_cloud", lambda v: f"{v:.2f}"),
+    ("Proof gen (s)", "proof_gen_cpu_ms", lambda v: f"{v / 1000:.2f}"),
+    ("Proof verif. (ms)", "proof_verify_cpu_ms", lambda v: f"{v:.1f}"),
+    ("Proof tam. (KB)", "proof_size_bytes", lambda v: f"{v / 1e3:.1f}"),
+]
+
+
+def build_overhead_tex(stats: dict) -> str:
+    lines = [
+        r"\begin{table}[htbp]",
+        r"\caption{Overhead de recursos por configuração. Média $\pm$ "
+        r"desvio padrão sobre as rodadas da execução.}",
+        r"\label{tab:overhead}",
+        r"\centering",
+        r"\resizebox{\textwidth}{!}{%",
+        r"\begin{tabular}{l" + "c" * len(OVERHEAD_COLS) + "}",
+        r"\toprule",
+        "Cenário & " + " & ".join(h for h, _, _ in OVERHEAD_COLS)
+        + r" \\ \midrule",
+    ]
+    for scenario, configs in SCENARIO_CONFIGS.items():
+        for c in configs:
+            lbl = c["label"]
+            if lbl not in stats.get(scenario, {}):
+                continue
+            st = stats[scenario][lbl]
+            row = [CONFIG_ROW_LABEL[scenario](c)]
+            for _, key, fn in OVERHEAD_COLS:
+                mean = st.get(key, compute_stats([0.0]))["mean"]
+                std = st.get(key, compute_stats([0.0]))["std"]
+                row.append(f"{fn(mean)} $\\pm$ {fn(std)}")
+            lines.append(" & ".join(row) + r" \\")
+    lines += [r"\bottomrule", r"\end{tabular}%", r"}", r"\end{table}"]
+    return "\n".join(lines)
