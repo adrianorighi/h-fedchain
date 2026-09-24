@@ -7,6 +7,10 @@ from experiments.metrics import MetricsCollector
 from monitoring.tracer import Tracer
 from monitoring.anomaly import AnomalyDetector
 
+RATIOS = [0.0, 0.10, 0.20, 0.30, 0.40]
+QUICK_RATIOS = [0.0, 0.20]
+
+
 async def run_adv(adversarial_ratio: float, tracer=None, use_dataset=False, quick=False, rounds=None):
     rounds = 3 if quick else (rounds or 50)
     warmup = 1 if quick else 1
@@ -29,13 +33,15 @@ async def run_adv(adversarial_ratio: float, tracer=None, use_dataset=False, quic
     mc.to_json(f"results/scenario_3_adv_{pct}.json")
     return mc
 
+
 async def run(tracer=None, use_dataset=False, quick=False):
     collectors = []
-    ratios = [0.0, 0.10, 0.20, 0.30, 0.40] if not quick else [0.0, 0.20]
+    ratios = QUICK_RATIOS if quick else RATIOS
     for r in ratios:
         mc = await run_adv(r, tracer=tracer, use_dataset=use_dataset, quick=quick)
         collectors.append(mc)
     return collectors[-1]
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
