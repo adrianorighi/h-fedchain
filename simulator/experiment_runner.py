@@ -5,6 +5,7 @@ from simulator.cluster import Cluster
 from simulator.interregional import InterRegionalManager
 from simulator.cloud import CloudComponent
 from monitoring.tracer import Tracer
+from monitoring.system_metrics import SystemMetrics
 
 
 class ExperimentRunner:
@@ -26,6 +27,7 @@ class ExperimentRunner:
         self.cloud = cloud
         self.tracer = tracer
         self.metrics: list[dict] = []
+        self._sys = SystemMetrics()
 
     async def run_round(self, round_num: int) -> dict:
         tracer = self.tracer
@@ -112,6 +114,9 @@ class ExperimentRunner:
         ) if getattr(global_output, "regionals", None) else 1
         result["snark_attempted"] = result["snark_proofs_total"]
         result["snark_passed"] = result["snark_proofs_total"] if result["snark_sampled_passed"] else 0
+        sys_snap = self._sys.snapshot()
+        result["cpu_percent"] = sys_snap["cpu_percent"]
+        result["memory_rss_bytes"] = sys_snap["memory_rss_bytes"]
         self.metrics.append(result)
         return result
 

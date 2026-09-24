@@ -43,6 +43,9 @@ async def test_multi_cluster_run():
             r["bytes_edge_fog"] + r["bytes_fog_intra"]
             + r["bytes_fog_inter"] + r["bytes_fog_cloud"]
         )
+        assert "cpu_percent" in r and "memory_rss_bytes" in r
+        assert r["memory_rss_bytes"] > 0
+        assert r["cpu_percent"] >= 0.0
 
 
 @pytest.mark.asyncio

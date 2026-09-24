@@ -109,6 +109,9 @@ async def test_directional_bytes_single_cluster():
         result["bytes_edge_fog"] + result["bytes_fog_intra"]
     )
     assert result["network_bytes"] == result["comm_overhead_bytes"]
+    assert "cpu_percent" in result and "memory_rss_bytes" in result
+    assert result["memory_rss_bytes"] > 0
+    assert result["cpu_percent"] >= 0.0
 
 
 @pytest.mark.asyncio

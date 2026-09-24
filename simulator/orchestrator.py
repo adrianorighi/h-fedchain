@@ -11,6 +11,7 @@ from hfc_types.block import Block, QuorumCertificate
 from simulator.network import EmulatedNetwork
 from simulator.fog_node import FogNode
 from monitoring.tracer import Tracer
+from monitoring.system_metrics import SystemMetrics
 from core.pki import generate_keypair, CertificateAuthority
 from core.pki.certificate import Certificate
 from core.multikrum.aggregator import MultiKrum
@@ -84,6 +85,7 @@ class Orchestrator:
         self._pending_snark_verify = None
         self._snark_verify_fired = False
         self.audit_logger = AuditLogger()
+        self._sys = SystemMetrics()
 
     def setup(self):
         ca_sk, ca_vk = generate_keypair()
@@ -348,6 +350,8 @@ class Orchestrator:
         )
         proof_size_bytes = snark_size + stark_size
 
+        sys_snap = self._sys.snapshot()
+
         return {
             "round": round_num,
             "leader": leader_id,
@@ -386,6 +390,8 @@ class Orchestrator:
             "proof_verify_cpu_ms": proof_verify_cpu_ms,
             "proof_size_bytes": proof_size_bytes,
             "stark_proof_generated": block.stark_proof is not None,
+            "cpu_percent": sys_snap["cpu_percent"],
+            "memory_rss_bytes": sys_snap["memory_rss_bytes"],
             "global_weights": self._global_weights.copy() if self._global_weights else {},
             "loss": loss,
             "vrf_candidates": [(c.node_id, c.y.hex()[:8]) for c in self._vrf_candidates] if hasattr(self, '_vrf_candidates') else [],
@@ -464,7 +470,8 @@ class Orchestrator:
                     "bytes_fog_inter": 0, "bytes_fog_cloud": 0,
                     "network_bytes": 0,
                     "proof_gen_cpu_ms": 0.0, "proof_verify_cpu_ms": 0.0,
-                    "proof_size_bytes": 0}
+                    "proof_size_bytes": 0,
+                    **self._sys.snapshot()}
 
         inter_node_selected: list[int] | None = None
         delta_w_reg: list[float] | None = None
@@ -513,7 +520,8 @@ class Orchestrator:
                     "bytes_fog_inter": 0, "bytes_fog_cloud": 0,
                     "network_bytes": 0,
                     "proof_gen_cpu_ms": 0.0, "proof_verify_cpu_ms": 0.0,
-                    "proof_size_bytes": 0}
+                    "proof_size_bytes": 0,
+                    **self._sys.snapshot()}
 
         vk_map = {n.node_id: n.vk for n in self.nodes}
         CONSENSUS_TIMEOUT = 5.0
@@ -566,7 +574,8 @@ class Orchestrator:
                     "bytes_fog_inter": 0, "bytes_fog_cloud": 0,
                     "network_bytes": 0,
                     "proof_gen_cpu_ms": 0.0, "proof_verify_cpu_ms": 0.0,
-                    "proof_size_bytes": 0}
+                    "proof_size_bytes": 0,
+                    **self._sys.snapshot()}
 
         qc_pre_commit = await _try_phase("pre_commit", lambda: _pre_commit_phase(qc_prepare))
         if qc_pre_commit is None:
@@ -580,7 +589,8 @@ class Orchestrator:
                     "bytes_fog_inter": 0, "bytes_fog_cloud": 0,
                     "network_bytes": 0,
                     "proof_gen_cpu_ms": 0.0, "proof_verify_cpu_ms": 0.0,
-                    "proof_size_bytes": 0}
+                    "proof_size_bytes": 0,
+                    **self._sys.snapshot()}
 
         qc_commit = await _try_phase("commit", lambda: _commit_phase(qc_pre_commit))
         if qc_commit is None:
@@ -594,7 +604,8 @@ class Orchestrator:
                     "bytes_fog_inter": 0, "bytes_fog_cloud": 0,
                     "network_bytes": 0,
                     "proof_gen_cpu_ms": 0.0, "proof_verify_cpu_ms": 0.0,
-                    "proof_size_bytes": 0}
+                    "proof_size_bytes": 0,
+                    **self._sys.snapshot()}
 
         entry = await leader_node.finalize_commit(qc_commit, proposed_block)
         if entry is None:
@@ -603,7 +614,8 @@ class Orchestrator:
                     "bytes_fog_inter": 0, "bytes_fog_cloud": 0,
                     "network_bytes": 0,
                     "proof_gen_cpu_ms": 0.0, "proof_verify_cpu_ms": 0.0,
-                    "proof_size_bytes": 0}
+                    "proof_size_bytes": 0,
+                    **self._sys.snapshot()}
 
         block = entry.block
 
@@ -664,6 +676,7 @@ class Orchestrator:
         self, num_rounds: int, warmup: int = 10
     ) -> ExperimentResult:
         self.setup()
+        self._sys.cpu_percent()  # arm baseline so round 1 measures since experiment start
         for r in range(num_rounds + warmup):
             metrics = await self.run_round(
                 r, fire_snark_verify=(r == num_rounds + warmup - 1)
