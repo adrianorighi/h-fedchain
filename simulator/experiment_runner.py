@@ -121,6 +121,7 @@ class ExperimentRunner:
         return result
 
     async def run_experiment(self, num_rounds: int) -> list[dict]:
+        self._sys.cpu_percent()  # arm baseline so round 1 measures since experiment start
         for rnd in range(1, num_rounds + 1):
             await self.run_round(rnd)
         return self.metrics
