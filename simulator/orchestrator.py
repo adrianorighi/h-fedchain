@@ -1,5 +1,6 @@
 import asyncio
 import pickle
+import random
 import statistics
 import time
 import numpy as np
@@ -19,6 +20,13 @@ from dataset.partitioner import DirichletPartitioner
 from dataset.edge_worker import EdgeWorker
 
 
+def select_adversarial_ids(total: int, ratio: float, seed: int) -> set[int]:
+    n = int(total * ratio)
+    if n <= 0:
+        return set()
+    return set(random.Random(seed).sample(range(total), n))
+
+
 class ExperimentResult:
     def __init__(self):
         self.round_metrics: list[dict] = []
@@ -34,6 +42,7 @@ class Orchestrator:
         latency_ms: float = 10.0,
         cloud_latency_ms: float = 50.0,
         adversarial_ratio: float = 0.0,
+        adversarial_seed: int = 42,
         use_dataset: bool = False,
         dataset_max_records: int = 500,
         dirichlet_alpha: float = 0.5,
@@ -49,6 +58,11 @@ class Orchestrator:
         self.latency_ms = latency_ms
         self.cloud_latency_ms = cloud_latency_ms
         self.adversarial_ratio = adversarial_ratio
+        self.adversarial_seed = adversarial_seed
+        total_devices = devices_per_cluster * num_clusters
+        self._adv_ids = select_adversarial_ids(
+            total_devices, adversarial_ratio, adversarial_seed
+        )
         self.use_dataset = use_dataset
         self.dataset_max_records = dataset_max_records
         self.dirichlet_alpha = dirichlet_alpha
@@ -122,13 +136,12 @@ class Orchestrator:
             num_classes=5,
         )
 
-        num_adv = int(num_devices * self.adversarial_ratio)
         use_snark = self.variant in ("snark", "full")
         self.edge_workers = []
         for i, indices in enumerate(assignments):
             if not indices:
                 continue
-            is_adv = i < num_adv
+            is_adv = i in self._adv_ids
             worker = EdgeWorker(
                 device_id=f"d{i}",
                 indices=indices,
@@ -164,10 +177,7 @@ class Orchestrator:
         grads: list[GradientWithProof] = []
         sk_map: dict[int, bytes] = {}
         for d in range(self.devices_per_cluster * self.num_clusters):
-            is_adv = (
-                self.adversarial_ratio > 0.0
-                and d < int(self.devices_per_cluster * self.adversarial_ratio)
-            )
+            is_adv = d in self._adv_ids
             data = (
                 np.random.randn(10).tolist()
                 if not is_adv
@@ -211,12 +221,14 @@ class Orchestrator:
 
     def _generate_real_gradients(self, round_num: int) -> list[GradientWithProof]:
         grads = []
-        for worker in self.edge_workers:
-            grad = worker.train_round(
+        for idx, worker in enumerate(self.edge_workers):
+            gwp = worker.train_round(
                 self._global_weights,
                 round_num=round_num,
             )
-            grads.append(grad)
+            if worker.is_adversarial:
+                gwp.gradient.node_id = f"adv_{idx}"
+            grads.append(gwp)
         return grads
 
     def _elect_leader(self, seed: bytes) -> tuple[str, list[VRFMessage]]:
@@ -245,9 +257,19 @@ class Orchestrator:
     def _build_metrics(self, round_num, leader_id, t_start, t_end, block, grads, cluster_results,
                        snark_sample_ok: Optional[bool] = None,
                        snark_sampled_verified: bool = False) -> dict:
-        total_adv = sum(r.total_adversarial for r in cluster_results)
-        total_rej_adv = sum(r.rejected_adversarial for r in cluster_results)
-        total_rej_honest = sum(r.rejected_honest for r in cluster_results)
+        total_dev = self.devices_per_cluster * self.num_clusters
+        # Every fog node in the group processes the same gradient set:
+        # de-duplicate with max across nodes, then sum across groups.
+        # Orchestrator runs a single fog group (all nodes see all grads).
+        cluster_results_grouped: list[list[AggregateGradient]] = [cluster_results]
+        rej_adv = sum(
+            max((r.rejected_adversarial for r in ags), default=0)
+            for ags in cluster_results_grouped
+        )
+        rej_hon = sum(
+            max((r.rejected_honest for r in ags), default=0)
+            for ags in cluster_results_grouped
+        )
 
         leader_node = next(n for n in self.nodes if n.node_id == leader_id)
 
@@ -311,10 +333,10 @@ class Orchestrator:
             "num_rejected": len(block.rejected_devices),
             "ledger_height": self.nodes[0].ledger.get_height(),
             "qc_emitted": True,
-            "num_adversarial": total_adv,
-            "num_honest": (self.devices_per_cluster * self.num_clusters) - total_adv,
-            "rejected_adversarial": total_rej_adv,
-            "falsely_rejected": total_rej_honest,
+            "num_adversarial": len(self._adv_ids),
+            "num_honest": total_dev - len(self._adv_ids),
+            "rejected_adversarial": rej_adv,
+            "falsely_rejected": rej_hon,
             "variant": self.variant,
             "view_change_count": vc_count,
             "view_change_latency_ms": vc_latency,
