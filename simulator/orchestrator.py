@@ -337,10 +337,10 @@ class Orchestrator:
         stark_gen_ms = leader_node.stage_times.get("stark_gen", 0.0)
         proof_gen_cpu_ms = snark_gen_ms + stark_gen_ms
 
-        proof_verify_cpu_ms = (
-            leader_node.stage_times.get("stark_verify", 0.0)
-            + leader_node.stage_times.get("stark_verify_regional", 0.0)
-        )
+        # fog verify_block é invocado apenas em caminhos de verificação
+        # explícitos; rodadas single-cluster podem reportar 0.0 quando a
+        # verificação STARK do bloco não é exercitada no fluxo da rodada.
+        proof_verify_cpu_ms = leader_node.stage_times.get("stark_verify", 0.0)
 
         snark_size = sum(getattr(g, "snark_proof_size", 0) for g in grads)
         stark_size = (

@@ -41,11 +41,6 @@ def shutdown_pool():
         _pool = None
 
 
-def prove_sync(gradient: Gradient, model_hash: bytes, sk: bytes) -> SnarkProof:
-    """Gera a prova SNARK para um gradiente (executa em subprocesso)."""
-    return asyncio.run(SnarkProver().generate_proof(gradient, model_hash, sk))
-
-
 def prove_timed_sync(
     gradient: Gradient, model_hash: bytes, sk: bytes
 ) -> tuple[SnarkProof, float]:
