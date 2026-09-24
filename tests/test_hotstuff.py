@@ -36,9 +36,9 @@ def test_collect_insufficient_votes(qc_certifier):
 
 
 def test_quorum_size_calculation(qc_certifier):
-    assert qc_certifier.quorum_size(5) == 4  # ceil(2*5/3) + 1
-    assert qc_certifier.quorum_size(4) == 3
-    assert qc_certifier.quorum_size(7) == 5
+    assert qc_certifier.quorum_size(5) == 4  # ceil(2*5/3)
+    assert qc_certifier.quorum_size(4) == 3  # ceil(2*4/3)
+    assert qc_certifier.quorum_size(7) == 5  # ceil(2*7/3)
 
 
 from core.hotstuff.engine import HotStuffEngine

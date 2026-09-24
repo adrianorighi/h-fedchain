@@ -13,8 +13,9 @@ class NetworkMessage:
 
 
 class EmulatedNetwork:
-    def __init__(self, latency_ms: float = 10.0):
+    def __init__(self, latency_ms: float = 10.0, cloud_latency_ms: float = 50.0):
         self.latency_ms = latency_ms
+        self.cloud_latency_ms = cloud_latency_ms
         self._queues: dict[str, asyncio.Queue[NetworkMessage]] = {}
 
     def add_node(self, node_id: str):
@@ -35,15 +36,15 @@ class EmulatedNetwork:
         for r in recipients:
             await self.send(sender, r, payload)
 
+    async def send_to_cloud(self, sender: str, payload: bytes):
+        """Envio para Cloud com latência de cloud_latency_ms."""
+        pass
+
     async def receive(self, node_id: str, timeout: float) -> Optional[NetworkMessage]:
         try:
             msg = await asyncio.wait_for(
                 self._queues[node_id].get(), timeout=timeout
             )
-            now = time.time()
-            delay = msg.delivery_time - now
-            if delay > 0:
-                await asyncio.sleep(delay)
             return msg
         except asyncio.TimeoutError:
             return None

@@ -111,7 +111,7 @@ class TestStarkProverVerifier:
         prover = StarkProver()
         verifier = StarkVerifier()
         proof = await prover.generate_proof(block)
-        tampered_bytes = proof.proof_bytes.replace(b'"root_hex"', b'"root_Xhex"')
+        tampered_bytes = proof.proof_bytes.replace(b'"final_value"', b'"final_xvalue"')
         proof.proof_bytes = tampered_bytes
         result = await verifier.verify(proof, proof.public_inputs)
         assert result is False

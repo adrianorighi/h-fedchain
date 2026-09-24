@@ -150,12 +150,28 @@ class StarkProver:
         self.f = Field()
 
     async def generate_proof(self, block: Block) -> StarkProof:
-        trace = [
-            block.round % P,
-            int.from_bytes(block.gradient_hash[:8], 'big') % P,
-            int.from_bytes(block.prev_hash[:8], 'big') % P,
-            int(block.timestamp * 1000) % P,
-        ]
+        # Build trace from actual block data — encode each accepted device's
+        # commitment as a trace element so the polynomial degree reflects the
+        # real aggregation workload.
+        trace = []
+        trace.append(block.round % P)
+        trace.append(
+            int.from_bytes(block.gradient_hash[:8], 'big') % P
+        )
+        trace.append(
+            int.from_bytes(block.prev_hash[:8], 'big') % P
+        )
+        trace.append(len(block.accepted_devices) % P)
+        trace.append(block.n % P)
+        trace.append(block.f % P)
+        # Each accepted device contributes a hash — encodes the set of
+        # participants that the FedAvg aggregation ran over.
+        for dev_id in block.accepted_devices:
+            dev_hash = int.from_bytes(
+                hashlib.sha256(dev_id.encode()).digest()[:8], 'big'
+            ) % P
+            trace.append(dev_hash)
+
         n = _next_power_of_two(len(trace))
         while len(trace) < n:
             trace.append(self.f.zero())
@@ -168,7 +184,10 @@ class StarkProver:
         eval_domain = [self.f.pow(g, i) for i in range(n * rs_factor)]
         codeword = [poly.eval(x) for x in eval_domain]
 
-        fri_result = self._fri_prove(codeword, n * rs_factor // 2, num_rounds=3)
+        # FRI rounds proportional to trace length: log2(n) folding rounds.
+        num_rounds = max(2, n.bit_length() - 1)
+        fri_result = self._fri_prove(codeword, n * rs_factor // 2,
+                                     num_rounds=num_rounds)
 
         proof_data = {
             "trace_length": n,
@@ -181,6 +200,9 @@ class StarkProver:
             "round": block.round,
             "gradient_hash": block.gradient_hash.hex(),
             "prev_hash": block.prev_hash.hex(),
+            "n_accepted": len(block.accepted_devices),
+            "n": block.n,
+            "f": block.f,
         }
         return StarkProof(proof_bytes=proof_bytes, public_inputs=public_inputs)
 
@@ -194,39 +216,84 @@ class StarkProver:
         return self.f.pow(gen, (P - 1) // n)
 
     def _fri_prove(self, codeword, max_degree, num_rounds=3):
-        result = {
-            "root_hex": [],
-            "alphas": [],
-            "leaf_proofs": [],
-            "final_value": None,
-        }
+        rounds_data = []
+        trees = []
         current = codeword
         for _ in range(num_rounds):
-            leaves = [struct.pack('>Q', c) for c in current]
-            mt = MerkleTree(leaves)
+            leaves_bytes = [struct.pack('>Q', c) for c in current]
+            mt = MerkleTree(leaves_bytes)
+            trees.append(mt)
             root = mt.root()
-            result["root_hex"].append(root.hex())
             seed = int.from_bytes(root[:8], 'big')
             alpha = seed % self.f.p
-            result["alphas"].append(alpha)
             half = len(current) // 2
             folded = []
             for i in range(half):
                 even = current[2 * i]
                 odd = current[2 * i + 1]
                 folded.append(self.f.add(even, self.f.mul(alpha, odd)))
-            proofs_for_round = []
+            queries = []
             for j in range(min(4, len(current))):
-                leaf_bytes = leaves[j]
-                pf = mt.get_proof(j)
-                proofs_for_round.append({
-                    "leaf": leaf_bytes.hex(),
-                    "siblings": [p.hex() for p in pf],
+                queries.append({
+                    "pos": j,
+                    "value": current[j],
+                    "leaf": leaves_bytes[j].hex(),
+                    "proof": [p.hex() for p in mt.get_proof(j)],
                 })
-            result["leaf_proofs"].append(proofs_for_round)
+            rounds_data.append({
+                "root": root.hex(),
+                "alpha": alpha,
+                "queries": queries,
+            })
             current = folded
-        result["final_value"] = current[0] if current else 0
-        return result
+
+        for i in range(num_rounds):
+            ri = rounds_data[i]
+            fold_proofs = []
+            if i < num_rounds - 1:
+                next_mt = trees[i + 1]
+                for pos in [0, 1]:
+                    leaf_2pos = next(
+                        (q["value"] for q in ri["queries"] if q["pos"] == 2 * pos),
+                        None,
+                    )
+                    leaf_2pos_1 = next(
+                        (q["value"] for q in ri["queries"] if q["pos"] == 2 * pos + 1),
+                        None,
+                    )
+                    if leaf_2pos is not None and leaf_2pos_1 is not None:
+                        folded_val = self.f.add(
+                            leaf_2pos, self.f.mul(ri["alpha"], leaf_2pos_1)
+                        )
+                        folded_bytes = struct.pack('>Q', folded_val)
+                        pf = next_mt.get_proof(pos)
+                        fold_proofs.append({
+                            "next_pos": pos,
+                            "value": folded_val,
+                            "leaf": folded_bytes.hex(),
+                            "proof": [p.hex() for p in pf],
+                        })
+            else:
+                leaf_0 = next(
+                    (q["value"] for q in ri["queries"] if q["pos"] == 0), None,
+                )
+                leaf_1 = next(
+                    (q["value"] for q in ri["queries"] if q["pos"] == 1), None,
+                )
+                if leaf_0 is not None and leaf_1 is not None:
+                    expected = self.f.add(
+                        leaf_0, self.f.mul(ri["alpha"], leaf_1)
+                    )
+                    fold_proofs.append({
+                        "next_pos": 0,
+                        "value": expected,
+                        "leaf": "",
+                        "proof": [],
+                    })
+            ri["fold_proofs"] = fold_proofs
+
+        final_val = current[0] if current else 0
+        return {"rounds": rounds_data, "final_value": final_val}
 
 
 class StarkVerifier:
@@ -240,17 +307,52 @@ class StarkVerifier:
             return False
         if not isinstance(data, dict) or "fri" not in data:
             return False
-        fri = data["fri"]
-        if "root_hex" not in fri:
-            return False
-        for round_idx in range(len(fri["root_hex"])):
-            try:
-                root = bytes.fromhex(fri["root_hex"][round_idx])
-                for j, lp in enumerate(fri["leaf_proofs"][round_idx]):
-                    leaf = bytes.fromhex(lp["leaf"])
-                    siblings = [bytes.fromhex(s) for s in lp["siblings"]]
-                    if not MerkleTree.verify(root, j, leaf, siblings):
-                        return False
-            except (KeyError, ValueError, IndexError):
+        try:
+            fri = data["fri"]
+            rounds = fri.get("rounds", [])
+            if not rounds:
                 return False
+            final_value = fri.get("final_value", 0)
+
+            for i in range(len(rounds)):
+                ri = rounds[i]
+                root_i = bytes.fromhex(ri["root"])
+                alpha_i = ri["alpha"]
+                queries_i = ri["queries"]
+                fold_proofs_i = ri.get("fold_proofs", [])
+
+                for q in queries_i:
+                    leaf_bytes = bytes.fromhex(q["leaf"])
+                    proof_bytes = [bytes.fromhex(s) for s in q["proof"]]
+                    if not MerkleTree.verify(root_i, q["pos"], leaf_bytes, proof_bytes):
+                        return False
+
+                for fp in fold_proofs_i:
+                    leaf_2k = next(
+                        (q["value"] for q in queries_i if q["pos"] == 2 * fp["next_pos"]),
+                        None,
+                    )
+                    leaf_2k1 = next(
+                        (q["value"] for q in queries_i if q["pos"] == 2 * fp["next_pos"] + 1),
+                        None,
+                    )
+                    if leaf_2k is None or leaf_2k1 is None:
+                        return False
+                    expected = self.f.add(leaf_2k, self.f.mul(alpha_i, leaf_2k1))
+                    if fp["value"] != expected:
+                        return False
+                    if fp["proof"]:
+                        fp_leaf = bytes.fromhex(fp["leaf"])
+                        next_root = bytes.fromhex(rounds[i + 1]["root"])
+                        fp_proof = [bytes.fromhex(s) for s in fp["proof"]]
+                        if not MerkleTree.verify(
+                            next_root, fp["next_pos"], fp_leaf, fp_proof
+                        ):
+                            return False
+                    else:
+                        if fp["value"] != final_value:
+                            return False
+
+        except (KeyError, ValueError, IndexError, TypeError):
+            return False
         return True

@@ -1,3 +1,5 @@
+import asyncio
+import pickle
 import time
 import numpy as np
 from typing import Optional
@@ -34,21 +36,41 @@ class FLCoin(AbsBaseline):
         t_start = time.time()
         grad_vectors = [np.array(g.data) for g in gradients]
         avg_grad = np.mean(grad_vectors, axis=0)
+
+        total_adv = sum(1 for g in gradients if g.node_id.startswith("adv_"))
+        total_honest = len(gradients) - total_adv
+
+        comm_bytes = sum(len(pickle.dumps(g)) for g in gradients)
+        block_bytes = len(pickle.dumps(avg_grad.tolist() if hasattr(avg_grad, 'tolist') else avg_grad))
+
         committee = self._elect_committee(round_num)
-        import asyncio
-        await asyncio.sleep(0.001 * self.committee_size)
         t_end = time.time()
+
         return {
             "round": round_num,
             "leader": committee[0],
             "latency": t_end - t_start,
+            "consensus_time_ms": (t_end - t_start) * 1000,
+            "block_size_bytes": block_bytes,
+            "comm_overhead_bytes": comm_bytes,
             "num_accepted": len(gradients),
             "num_rejected": 0,
-            "num_adversarial": 0,
-            "num_honest": len(gradients),
+            "num_adversarial": total_adv,
+            "num_honest": total_honest,
+            "rejected_adversarial": 0,
             "falsely_rejected": 0,
             "qc_emitted": True,
             "ledger_height": round_num + 1,
+            "variant": "no_zkp",
+            "snark_required": False,
+            "snark_attempted": 0,
+            "snark_passed": 0,
+            "stark_proof_generated": False,
+            "view_change_count": 0,
+            "view_change_latency_ms": 0.0,
+            "state_divergence": False,
+            "ledger_integrity": True,
+            "stage_time_ms": {},
         }
 
     async def run_experiment(

@@ -47,20 +47,65 @@ async def test_fog_node_generates_real_votes():
     sk2, vk2 = generate_keypair()
 
     net = EmulatedNetwork(latency_ms=0)
-    net.add_node("n0")
-    net.add_node("n1")
-    net.add_node("n2")
+    for nid in ["n0", "n1", "n2"]:
+        net.add_node(nid)
 
-    node = FogNode("n0", sk0, vk0, ["n1", "n2"], 3, 1, net)
-    node._set_vk("n1", vk1)
-    node._set_vk("n2", vk2)
-    node._set_peer_sk("n1", sk1)
-    node._set_peer_sk("n2", sk2)
+    nodes = [
+        FogNode("n0", sk0, vk0, ["n1", "n2"], 3, 1, net),
+        FogNode("n1", sk1, vk1, ["n0", "n2"], 3, 1, net),
+        FogNode("n2", sk2, vk2, ["n0", "n1"], 3, 1, net),
+    ]
+    for node in nodes:
+        node._set_vk("n0", vk0)
+        node._set_vk("n1", vk1)
+        node._set_vk("n2", vk2)
 
     block = Block(round=1, gradient_hash=b"gh", qc_commit=None, stark_proof=None,
                   accepted_devices=[], rejected_devices=[], timestamp=0.0, prev_hash=b"\x00" * 32)
 
-    result = await node.run_consensus(1, True, block)
-    assert result is not None
-    assert result.block.qc_commit is not None
-    assert len(result.block.qc_commit.signatures) >= 2
+    round_num = 1
+    for node in nodes:
+        await node.hotstuff.start_round(round_num, node.node_id == "n0")
+
+    proposal = await nodes[0].hotstuff.propose(block)
+    assert proposal is not None
+
+    vk_map = {n.node_id: n.vk for n in nodes}
+    prepare_votes = []
+    for node in nodes:
+        vote = await node.hotstuff.on_prepare(block)
+        if vote:
+            prepare_votes.append((vote.node_id, vote.signature))
+
+    qc_prepare = await nodes[0].hotstuff.collect_votes(
+        round_num, block.hash, "prepare", prepare_votes, vk_map,
+    )
+    assert qc_prepare is not None
+    assert len(qc_prepare.signatures) >= 2
+
+    pre_commit_votes = []
+    for node in nodes:
+        vote = await node.hotstuff.on_pre_commit(qc_prepare)
+        if vote:
+            pre_commit_votes.append((vote.node_id, vote.signature))
+
+    qc_pre_commit = await nodes[0].hotstuff.collect_votes(
+        round_num, block.hash, "pre_commit", pre_commit_votes, vk_map,
+    )
+    assert qc_pre_commit is not None
+
+    commit_votes = []
+    for node in nodes:
+        vote = await node.hotstuff.on_commit(qc_pre_commit)
+        if vote:
+            commit_votes.append((vote.node_id, vote.signature))
+
+    qc_commit = await nodes[0].hotstuff.collect_votes(
+        round_num, block.hash, "commit", commit_votes, vk_map,
+    )
+    assert qc_commit is not None
+    assert len(qc_commit.signatures) >= 2
+
+    entry = await nodes[0].finalize_commit(qc_commit, block)
+    assert entry is not None
+    assert entry.block.qc_commit is not None

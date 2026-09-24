@@ -1,3 +1,4 @@
+import time
 from typing import Optional
 from core.hotstuff.messages import ViewChangeMessage, NewViewMessage
 from core.pki import sign as pki_sign
@@ -9,19 +10,29 @@ class ViewChangeHandler:
         self.f = f
         self.current_view = 1
         self._highest_qc: Optional[tuple[int, bytes]] = None
+        self._vc_start_time: Optional[float] = None
+        self._vc_durations: list[float] = []
 
     def should_change_view(self, timeout: bool = False) -> bool:
+        if timeout and self._vc_start_time is None:
+            self._vc_start_time = time.time()
         return timeout
 
     def record_highest_qc(self, round: int, qc: bytes):
         if self._highest_qc is None or round > self._highest_qc[0]:
             self._highest_qc = (round, qc)
 
-    def next_leader(self, node_ids: list[str]) -> str:
-        current_idx = (self.current_view - 1) % len(node_ids)
-        next_idx = (current_idx + 1) % len(node_ids)
+    def next_leader(self, node_ids: list[str], vrf_candidates: Optional[list[tuple[str, bytes]]] = None) -> str:
+        if vrf_candidates and self.current_view < len(vrf_candidates):
+            leader = vrf_candidates[self.current_view][0]
+        else:
+            current_idx = (self.current_view - 1) % len(node_ids)
+            leader = node_ids[(current_idx + 1) % len(node_ids)]
         self.current_view += 1
-        return node_ids[next_idx]
+        if self._vc_start_time is not None:
+            self._vc_durations.append(time.time() - self._vc_start_time)
+            self._vc_start_time = None
+        return leader
 
     def create_view_change(
         self, node_id: str, new_view: int, sk: bytes

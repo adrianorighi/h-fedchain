@@ -2,7 +2,7 @@ import time
 import numpy as np
 from dataclasses import replace
 from typing import Optional
-from hfc_types.messages import Gradient, GradientWithProof, VRFMessage, AggregateGradient, MessageType
+from hfc_types.messages import Gradient, GradientWithProof, VRFMessage, AggregateGradient
 from hfc_types.block import Block, QuorumCertificate, LedgerEntry
 from hfc_types.crypto import SnarkProof
 from core.hotstuff.engine import HotStuffEngine
@@ -14,11 +14,11 @@ from core.ledger.store import LedgerStore
 from zkp.stark import StarkProver, StarkVerifier
 from zkp.snark import SnarkVerifier
 from simulator.network import EmulatedNetwork
-from core.pki import sign as pki_sign
 from core.pki.certificate import Certificate
 from core.pki.verifier import VerificationPipeline
 from core.pki.ca import CertificateAuthority
 from core.audit.logger import AuditLogger
+from monitoring.tracer import Tracer
 
 
 class FogNode:
@@ -41,12 +41,13 @@ class FogNode:
         self.n = n
         self.f = f
         self.network = network
-        self.hotstuff = HotStuffEngine(node_id, sk, vk, peers, n, f)
+        self.view_change = ViewChangeHandler(n, f)
+        self.hotstuff = HotStuffEngine(node_id, sk, vk, peers, n, f,
+                                        view_change_handler=self.view_change)
         self.vrf = VRFLeaderElection()
         self.multikrum = MultiKrum()
         self.ledger = LedgerStore()
         self.qc = QuorumCertifier()
-        self.view_change = ViewChangeHandler(n, f)
         self.stark_prover = StarkProver()
         self.stark_verifier = StarkVerifier()
         self.snark_verifier = SnarkVerifier()
@@ -59,6 +60,7 @@ class FogNode:
         self._variant: str = "no_zkp"
         self.audit_logger: Optional[AuditLogger] = None
         self.stage_times: dict[str, float] = {}
+        self.tracer: Optional[Tracer] = None
 
     def _set_vk(self, node_id: str, vk: bytes):
         self._vk_map[node_id] = vk
@@ -80,20 +82,49 @@ class FogNode:
         seed: bytes,
         round_num: int,
         model_hash: Optional[bytes] = None,
+        verify_snark: bool = True,
+    ) -> Optional[AggregateGradient]:
+        tracer = self.tracer
+        if tracer is not None:
+            ctx = tracer.span("process_round", "fog", self.node_id, round_num)
+            ctx.__enter__()
+        else:
+            ctx = None
+        try:
+            return await self._process_round_impl(
+                gradients_or_proofs, seed, round_num, model_hash,
+                verify_snark=verify_snark,
+            )
+        finally:
+            if ctx is not None:
+                ctx.__exit__(None, None, None)
+
+    async def _process_round_impl(
+        self,
+        gradients_or_proofs: list,
+        seed: bytes,
+        round_num: int,
+        model_hash: Optional[bytes] = None,
+        verify_snark: bool = True,
     ) -> Optional[AggregateGradient]:
         valid_grads: list[Gradient] = []
         total_adversarial = 0
         rejected_adversarial = 0
         rejected_honest = 0
+        snark_attempted = 0
+        snark_passed = 0
+        snark_failed = 0
         self.stage_times = {}
         auditor = self.audit_logger
 
         use_pipeline = self.ca is not None
 
+        t_verify_start = time.perf_counter()
+
         if use_pipeline:
             pipeline = VerificationPipeline(
                 self.ca, self.ca_vk, self._cert_map,
-                use_snark=(self._variant in ("snark", "full")),
+                use_snark=(self._variant in ("snark", "full") and verify_snark),
             )
 
         for item in gradients_or_proofs:
@@ -103,7 +134,18 @@ class FogNode:
                 grad = GradientWithProof(gradient=item, snark_proof=None)
 
             if use_pipeline:
-                result = pipeline.verify(grad)
+                result = pipeline.verify(grad, model_hash=model_hash)
+                had_snark = (
+                    grad.snark_proof is not None
+                    and self._variant in ("snark", "full")
+                    and verify_snark
+                )
+                if had_snark:
+                    snark_attempted += 1
+                    if result.accepted and result.snark_ok:
+                        snark_passed += 1
+                    else:
+                        snark_failed += 1
                 if result.accepted:
                     valid_grads.append(Gradient(
                         node_id=result.node_id,
@@ -117,35 +159,46 @@ class FogNode:
                     rejected_adversarial += 1
                 else:
                     rejected_honest += 1
-                if not hasattr(self, '_audit_log'):
-                    self._audit_log = []
-                self._audit_log.append({
-                    "node": result.node_id,
-                    "reason": result.reason,
-                    "round": round_num,
-                })
+                if auditor is not None:
+                    event_type = "REJ_PKI" if "PKI" in (result.reason or "").upper() else "REJ_ZKP"
+                    auditor.log(event_type, result.node_id, round_num,
+                                {"reason": result.reason, "is_adversarial": is_adv})
                 continue
 
             is_adv = grad.gradient.node_id.startswith("adv_")
             if is_adv:
                 total_adversarial += 1
 
-            if grad.snark_proof is not None and self._variant in ("snark", "full"):
-                vk = self._vk_map.get(grad.gradient.node_id)
-                if vk is None or not await self.snark_verifier.verify(
-                    grad.snark_proof, model_hash or b"", vk
-                ):
-                    if is_adv:
-                        rejected_adversarial += 1
-                    else:
-                        rejected_honest += 1
-                    continue
+            had_snark = (
+                grad.snark_proof is not None
+                and self._variant in ("snark", "full")
+                and verify_snark
+            )
+            if had_snark:
+                snark_attempted += 1
+                if verify_snark:
+                    vk = self._vk_map.get(grad.gradient.node_id)
+                    if vk is None or not await self.snark_verifier.verify(
+                        grad.snark_proof, model_hash or b"", vk
+                    ):
+                        snark_failed += 1
+                        if is_adv:
+                            rejected_adversarial += 1
+                        else:
+                            rejected_honest += 1
+                        if auditor is not None:
+                            auditor.log("REJ_ZKP", grad.gradient.node_id, round_num,
+                                        {"reason": "snark_verify_failed"})
+                        continue
+                snark_passed += 1
 
             if is_adv:
                 rejected_adversarial += 1
                 continue
 
             valid_grads.append(grad.gradient)
+
+        self.stage_times["verify"] = (time.perf_counter() - t_verify_start) * 1000
 
         if len(valid_grads) < self.n - self.f:
             if auditor is not None:
@@ -155,8 +208,11 @@ class FogNode:
                             {"reason": "Insufficient contributions, round aborted"})
             return None
 
+        t_krum_start = time.perf_counter()
         np_grads = [np.array(g.data) for g in valid_grads]
         selected = self.multikrum.select(np_grads, self.f)
+        self.stage_times["multikrum"] = (time.perf_counter() - t_krum_start) * 1000
+
         accepted = [valid_grads[i].node_id for i in selected]
         rejected = [
             g.node_id for i, g in enumerate(valid_grads)
@@ -168,6 +224,8 @@ class FogNode:
                 rejected_adversarial += 1
             else:
                 rejected_honest += 1
+            if auditor is not None:
+                auditor.log("REJ_MULTIKRUM", gid, round_num, {})
 
         agg = AggregateGradient(
             node_id=self.node_id,
@@ -178,82 +236,20 @@ class FogNode:
             total_adversarial=total_adversarial,
             rejected_adversarial=rejected_adversarial,
             rejected_honest=rejected_honest,
+            snark_attempted=snark_attempted,
+            snark_passed=snark_passed,
+            snark_failed=snark_failed,
         )
         return agg
 
-    @staticmethod
-    def _sign_votes(peers: list[str], quorum: int, peers_sk: dict[str, bytes],
-                    round_num: int, block_hash: bytes, msg_type: MessageType) -> list[tuple[str, bytes]]:
-        msg = str(round_num).encode() + block_hash + msg_type.name.encode()
-        votes = []
-        for p in peers[:quorum]:
-            sk = peers_sk.get(p)
-            if sk is None:
-                continue
-            sig = pki_sign(sk, msg)
-            votes.append((p, sig))
-        return votes
-
-    async def run_consensus(
-        self,
-        round_num: int,
-        is_leader: bool,
-        proposed_block: Optional[Block] = None,
-    ) -> Optional[LedgerEntry]:
-        await self.hotstuff.start_round(round_num, is_leader)
-
-        if is_leader and proposed_block is not None:
-            proposal = await self.hotstuff.propose(proposed_block)
-            if proposal is None:
-                return None
-            quorum = self.qc.quorum_size(self.n)
-
-            prepare_votes = self._sign_votes(
-                self.peers, quorum, self._peers_sk,
-                round_num, proposed_block.hash, MessageType.PREPARE,
-            )
-            if len(prepare_votes) < quorum:
-                return None
-            qc_prepare = await self.hotstuff.collect_votes(
-                round_num, proposed_block.hash, "prepare", prepare_votes,
-                vk_map=self._vk_map,
-            )
-            if qc_prepare is None:
-                return None
-
-            for _ in self.peers:
-                await self.hotstuff.on_pre_commit(qc_prepare)
-
-            pre_commit_votes = self._sign_votes(
-                self.peers, quorum, self._peers_sk,
-                round_num, proposed_block.hash, MessageType.PRE_COMMIT,
-            )
-            qc_pre_commit = await self.hotstuff.collect_votes(
-                round_num, proposed_block.hash, "pre_commit", pre_commit_votes,
-                vk_map=self._vk_map,
-            )
-            if qc_pre_commit is None:
-                return None
-
-            for _ in self.peers:
-                await self.hotstuff.on_commit(qc_pre_commit)
-
-            commit_votes = self._sign_votes(
-                self.peers, quorum, self._peers_sk,
-                round_num, proposed_block.hash, MessageType.COMMIT,
-            )
-            qc_commit = await self.hotstuff.collect_votes(
-                round_num, proposed_block.hash, "commit", commit_votes,
-                vk_map=self._vk_map,
-            )
-            if qc_commit is None:
-                return None
-
-            entry = await self.hotstuff.on_qc_commit(qc_commit)
-            if entry is not None and self._variant in ("stark", "full"):
-                proof = await self.stark_prover.generate_proof(entry.block)
-                updated_block = replace(entry.block, stark_proof=proof)
-                entry = LedgerEntry(block=updated_block, node_id=entry.node_id, stored_at=entry.stored_at, verified=entry.verified)
-            return entry
-
-        return None
+    async def finalize_commit(self, qc_commit: QuorumCertificate, block: Block) -> Optional[LedgerEntry]:
+        t_stark_start = time.perf_counter()
+        self.hotstuff._last_proposal = block
+        entry = await self.hotstuff.on_qc_commit(qc_commit)
+        if entry is not None and self._variant in ("stark", "full"):
+            proof = await self.stark_prover.generate_proof(entry.block)
+            updated_block = replace(entry.block, stark_proof=proof)
+            entry = LedgerEntry(block=updated_block, node_id=entry.node_id,
+                                stored_at=entry.stored_at, verified=entry.verified)
+        self.stage_times["stark_gen"] = (time.perf_counter() - t_stark_start) * 1000
+        return entry

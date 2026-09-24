@@ -35,6 +35,8 @@ class QAP:
         self.num_private = 1
         self.num_constraints = 1
 
+        # Constraint: x1 * x3 = x2
+        #   gradient_hash * witness = output
         self.u = [
             [0], [1], [0], [0]
         ]
@@ -145,15 +147,19 @@ class SnarkProver:
     ) -> SnarkProof:
         crs, pk, _ = _get_global_crs()
 
-        x = _hash_to_scalar(gradient.data, model_hash)
+        gradient_hash = _hash_to_scalar(gradient.data, model_hash)
+        model_hash_scalar = int.from_bytes(model_hash[:8], 'big') % curve_order if model_hash else 0
+        norm_bound = int.from_bytes(hashlib.sha256(str(gradient.data).encode()).digest()[:4], 'big') % curve_order
+
+        # Private witnesses
         w = int.from_bytes(sk[:8], 'big') % curve_order
-        y = _mod(x * w)
+        output = _mod(gradient_hash * w)
 
         r = _random_scalar()
         s = _random_scalar()
         rs = _mod(r * s)
 
-        a_scalar = _mod(crs.alpha + x + r * crs.delta)
+        a_scalar = _mod(crs.alpha + gradient_hash + r * crs.delta)
         b_scalar = _mod(crs.beta + w + s * crs.delta)
 
         A = bn128.multiply(bn128.G1, a_scalar)
@@ -185,13 +191,17 @@ class SnarkProver:
             "A": point_to_dict(A),
             "B": g2_point_to_dict(B),
             "C": point_to_dict(C),
-            "public": ["1", str(x), str(y)],
+            "public": ["1", str(gradient_hash), str(output)],
         }
         proof_bytes = json.dumps(proof_data, sort_keys=True, default=str).encode()
+        import numpy as np
+        gradient_norm = float(np.linalg.norm(gradient.data))
         public_inputs = {
             "gradient_hash": hashlib.sha256(
                 str(gradient.data).encode()
             ).hexdigest(),
+            "gradient_norm": gradient_norm,
+            "model_hash": model_hash.hex() if model_hash else "",
         }
         return SnarkProof(proof_bytes=proof_bytes, public_inputs=public_inputs)
 

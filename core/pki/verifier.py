@@ -25,7 +25,7 @@ class VerificationPipeline:
         self.cert_map = cert_map
         self.use_snark = use_snark
 
-    def verify(self, grad: GradientWithProof) -> VerificationResult:
+    def verify(self, grad: GradientWithProof, model_hash: bytes = b"") -> VerificationResult:
         result = VerificationResult(node_id=grad.gradient.node_id)
 
         cert = self.cert_map.get(grad.gradient.node_id)
@@ -46,7 +46,7 @@ class VerificationPipeline:
             from zkp.snark import SnarkVerifier
             verifier = SnarkVerifier()
             import asyncio
-            if not asyncio.run(verifier.verify(grad.snark_proof, b"model_hash", cert.public_key)):
+            if not asyncio.run(verifier.verify(grad.snark_proof, model_hash, cert.public_key)):
                 result.reason = "snark_fail"
                 result.snark_ok = False
                 return result

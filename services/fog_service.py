@@ -173,7 +173,7 @@ class FogService:
                 await self._read_stream(stream, peer_id)
                 return
             except Exception:
-                await asyncio.sleep(0.5)
+                pass
 
     async def _read_stream(self, stream, peer_id: str):
         async for response in stream:
@@ -275,15 +275,23 @@ class FogService:
 
         np_grads = [np.array(g.data) for g in valid_grads]
         selected = self.multikrum.select(np_grads, self.f)
+        accepted = [valid_grads[i].node_id for i in selected]
+        rejected = [
+            valid_grads[i].node_id for i in range(len(valid_grads))
+            if i not in selected
+        ]
+        total_adv = sum(1 for g in valid_grads if g.node_id.startswith("adv_"))
+        rej_adv = sum(1 for i in selected if valid_grads[i].node_id.startswith("adv_"))
+        rej_honest = len(rejected) - (total_adv - rej_adv)
         agg = AggregateGradient(
             node_id=self.node_id,
             round=round_num,
             gradient=valid_grads[selected[0]],
-            accepted_devices=[g.node_id for g in valid_grads],
-            rejected_devices=[],
-            total_adversarial=0,
-            rejected_adversarial=0,
-            rejected_honest=0,
+            accepted_devices=accepted,
+            rejected_devices=rejected,
+            total_adversarial=total_adv,
+            rejected_adversarial=total_adv - rej_adv,
+            rejected_honest=rej_honest,
         )
         self._last_aggregate = agg
 
@@ -312,6 +320,7 @@ class FogService:
             rejected_devices=[],
             timestamp=time.time(),
             prev_hash=b"\x00" * 32,
+            n=self.n, f=self.f,
         )
         if self.ledger.get_height() > 0:
             block = replace(

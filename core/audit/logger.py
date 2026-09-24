@@ -6,6 +6,9 @@ class AuditLogger:
         "REJ_PKI", "REJ_ZKP", "REJ_MULTIKRUM",
         "LEADER_ELECTION", "VIEW_CHANGE", "QC_COMMIT",
         "INSUF_CONTRIBUTIONS", "ROUND_ABORTED",
+        "GLOBAL_AGGREGATION", "MODEL_UPDATE",
+        "STARK_VERIFY", "WORM_APPEND",
+        "MODEL_VALIDATION",
     ]
 
     def __init__(self):

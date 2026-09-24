@@ -16,6 +16,11 @@ class RegionalOutput:
     n_devices: int
     round_num: int
     cluster_id: str
+    delta_w_data: list[float] | None = None
+    snark_proofs_total: int = 0
+    snark_verify_projected_ms: float = 0.0
+    snark_sampled_passed: int = 1
+    pipeline_latency_ms: float = 0.0
 
 
 @dataclass
@@ -24,6 +29,7 @@ class GlobalOutput:
     pi_inter: Optional["StarkProof"]
     n_active_clusters: int
     round_num: int
+    regionals: list["RegionalOutput"] = field(default_factory=list)
 
 
 @dataclass
@@ -58,6 +64,8 @@ class Block:
     rejected_devices: list[str]
     timestamp: float
     prev_hash: bytes
+    n: int = 0
+    f: int = 0
     hash: bytes = field(init=False)
 
     def __post_init__(self):

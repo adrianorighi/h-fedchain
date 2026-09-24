@@ -91,3 +91,130 @@ def test_to_json(tmp_path):
     data = json.loads(path.read_text())
     assert len(data) == 1
     assert data[0]["latency"] == 10.0
+
+
+# ── Testes para métricas novas (Grupo A/B) ────────────
+
+def test_view_change_frequency_zero():
+    mc = MetricsCollector()
+    mc.add_round({"latency": 1.0, "view_change_count": 0})
+    assert mc.view_change_frequency() == 0.0
+    assert mc.view_change_resistance() == 1.0
+
+
+def test_view_change_frequency_nonzero():
+    mc = MetricsCollector()
+    for i in range(5):
+        mc.add_round({"latency": 1.0, "view_change_count": i})
+    assert mc.view_change_frequency() == 2.0  # (0+1+2+3+4)/5
+
+
+def test_view_change_latency():
+    mc = MetricsCollector()
+    mc.add_round({"latency": 1.0, "view_change_latency_ms": 150.0})
+    mc.add_round({"latency": 1.0, "view_change_latency_ms": 50.0})
+    assert mc.view_change_latency_ms() == 100.0
+
+
+def test_ledger_integrity_all_ok():
+    mc = MetricsCollector()
+    mc.add_round({"latency": 1.0, "ledger_integrity": True})
+    mc.add_round({"latency": 1.0, "ledger_integrity": True})
+    assert mc.ledger_integrity() == 1.0
+
+
+def test_ledger_integrity_mixed():
+    mc = MetricsCollector()
+    mc.add_round({"latency": 1.0, "ledger_integrity": True})
+    mc.add_round({"latency": 1.0, "ledger_integrity": False})
+    assert mc.ledger_integrity() == 0.5
+
+
+def test_state_divergence_none():
+    mc = MetricsCollector()
+    mc.add_round({"latency": 1.0, "state_divergence": False})
+    assert mc.state_divergence_rate() == 0.0
+
+
+def test_state_divergence_some():
+    mc = MetricsCollector()
+    mc.add_round({"latency": 1.0, "state_divergence": False})
+    mc.add_round({"latency": 1.0, "state_divergence": True})
+    assert mc.state_divergence_rate() == 0.5
+
+
+def test_participation_traceability():
+    mc = MetricsCollector()
+    mc.add_round({"latency": 1.0, "num_accepted": 10, "num_rejected": 2})
+    assert mc.participation_traceability() == 1.0
+
+
+def test_stage_time_empty():
+    mc = MetricsCollector()
+    mc.add_round({"latency": 1.0})
+    assert mc.stage_time_ms() == {}
+
+
+def test_stage_time_single():
+    mc = MetricsCollector()
+    mc.add_round({"latency": 1.0, "stage_time_ms": {"verify": 10.0, "multikrum": 2.0}})
+    result = mc.stage_time_ms()
+    assert result.get("verify") == 10.0
+    assert result.get("multikrum") == 2.0
+    assert mc.stage_time_ms("verify") == 10.0
+
+
+def test_stage_time_average():
+    mc = MetricsCollector()
+    mc.add_round({"latency": 1.0, "stage_time_ms": {"verify": 10.0}})
+    mc.add_round({"latency": 1.0, "stage_time_ms": {"verify": 20.0}})
+    assert mc.stage_time_ms("verify") == 15.0
+
+
+def test_compliance_overhead_no_baseline():
+    mc = MetricsCollector()
+    mc.add_round({"latency": 2.0})
+    result = mc.compliance_overhead()
+    assert result["overhead_pct"] == 0.0
+    assert result["actual"] == 2.0
+
+
+def test_compliance_overhead_with_baseline():
+    mc = MetricsCollector()
+    mc.add_round({"latency": 3.0})
+    result = mc.compliance_overhead(baseline_latency=2.0)
+    assert result["overhead_pct"] == 50.0
+    assert result["baseline"] == 2.0
+
+
+def test_convergence_rounds():
+    mc = MetricsCollector()
+    mc.add_round({"latency": 1.0, "loss": 2.0})
+    mc.add_round({"latency": 1.0, "loss": 1.5})
+    mc.add_round({"latency": 1.0, "loss": 1.0})
+    mc.add_round({"latency": 1.0, "loss": 0.99})
+    assert mc.convergence_rounds(threshold=0.02) == 3
+
+
+def test_convergence_rounds_no_loss():
+    mc = MetricsCollector()
+    mc.add_round({"latency": 1.0})
+    assert mc.convergence_rounds() == 1
+
+
+def test_all_metrics_includes_new():
+    mc = MetricsCollector()
+    mc.add_round({
+        "latency": 50.0, "qc_emitted": True,
+        "view_change_count": 0, "view_change_latency_ms": 0,
+        "ledger_integrity": True, "state_divergence": False,
+        "stage_time_ms": {}, "num_accepted": 10, "num_rejected": 0,
+    })
+    metrics = mc.all_metrics()
+    new_keys = [
+        "participation_traceability", "view_change_frequency",
+        "view_change_latency_ms", "view_change_resistance",
+        "ledger_integrity", "state_divergence_rate", "stage_time_ms",
+    ]
+    for key in new_keys:
+        assert key in metrics, f"Missing key: {key}"

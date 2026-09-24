@@ -4,6 +4,7 @@ from hfc_types.block import Block, QuorumCertificate, LedgerEntry
 from hfc_types.messages import MessageType
 from core.hotstuff.quorum import QuorumCertifier
 from core.hotstuff.messages import PrepareProposal, VoteMessage
+from core.hotstuff.view_change import ViewChangeHandler
 from core.pki import sign as pki_sign
 
 
@@ -16,6 +17,7 @@ class HotStuffEngine:
         peers: list[str],
         n: int,
         f: int,
+        view_change_handler: Optional[ViewChangeHandler] = None,
     ):
         self.node_id = node_id
         self.sk = sk
@@ -24,6 +26,7 @@ class HotStuffEngine:
         self.n = n
         self.f = f
         self.quorum_certifier = QuorumCertifier()
+        self.view_change_handler = view_change_handler
 
         self.round = 0
         self.current_view = 1
@@ -56,7 +59,7 @@ class HotStuffEngine:
             return None
         self._voted_prepare.add(proposal.round)
         self._last_proposal = proposal
-        msg = str(self.round).encode() + b"prepare" + proposal.hash
+        msg = str(self.round).encode() + proposal.hash + MessageType.PREPARE.name.encode()
         sig = pki_sign(self.sk, msg)
         return VoteMessage(
             node_id=self.node_id,
@@ -70,7 +73,7 @@ class HotStuffEngine:
         if qc.round in self._voted_pre_commit:
             return None
         self._voted_pre_commit.add(qc.round)
-        msg = str(self.round).encode() + b"pre_commit" + qc.block_hash
+        msg = str(self.round).encode() + qc.block_hash + MessageType.PRE_COMMIT.name.encode()
         sig = pki_sign(self.sk, msg)
         return VoteMessage(
             node_id=self.node_id,
@@ -84,7 +87,7 @@ class HotStuffEngine:
         if qc.round in self._voted_commit:
             return None
         self._voted_commit.add(qc.round)
-        msg = str(self.round).encode() + b"commit" + qc.block_hash
+        msg = str(self.round).encode() + qc.block_hash + MessageType.COMMIT.name.encode()
         sig = pki_sign(self.sk, msg)
         return VoteMessage(
             node_id=self.node_id,
@@ -147,4 +150,12 @@ class HotStuffEngine:
             return None
 
     async def handle_timeout(self) -> bool:
+        if self.view_change_handler is None:
+            return False
+        if not self.view_change_handler.should_change_view(timeout=True):
+            return False
+        self.state = "VIEW_CHANGE"
+        vc_msg = self.view_change_handler.create_view_change(
+            self.node_id, self.current_view + 1, self.sk
+        )
         return True

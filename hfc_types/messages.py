@@ -64,3 +64,6 @@ class AggregateGradient:
     total_adversarial: int = 0
     rejected_adversarial: int = 0
     rejected_honest: int = 0
+    snark_attempted: int = 0
+    snark_passed: int = 0
+    snark_failed: int = 0

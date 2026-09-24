@@ -40,9 +40,13 @@ class ResultExtractor:
         print(f"  -> Saved: {path}")
 
     def _generate_latex_table(self):
-        headers = ["Cenário", "Latência (s)", "Sucesso Cons.",
-                   "Consenso (ms)", "Bloco (B)", "Detecção", "FPR",
-                   "Uniform. VRF", "Audit."]
+        headers = ["Cenário", "Lat.(s)", "Sucesso",
+                   "Cons.(ms)", "Bloco(B)", "Overhead(MB)",
+                   "DR", "FPR",
+                   "I_ledger", "D_state", "F_vc", "ΔT_vc(ms)",
+                   "RP", "VRF(p)", "Div.", "Audit.",
+                   "ZKP%", "Conv.", "C_rnd", "Loss", "Loss/N"]
+        col_count = len(headers) - 1
         rows = []
         for name, metrics in self.all_metrics.items():
             row = [
@@ -51,10 +55,22 @@ class ResultExtractor:
                 f"{metrics.get('consensus_success', 0):.0%}",
                 f"{metrics.get('consensus_time_ms', 0):.1f}",
                 f"{metrics.get('block_size_bytes', 0):.0f}",
+                f"{metrics.get('comm_overhead_bytes', 0) / 1e6:.2f}",
                 f"{metrics.get('detection_rate', 0):.0%}",
                 f"{metrics.get('false_positive_rate', 0):.1%}",
+                f"{metrics.get('ledger_integrity', 1):.0%}",
+                f"{metrics.get('state_divergence_rate', 0):.0%}",
+                f"{metrics.get('view_change_frequency', 0):.4f}",
+                f"{metrics.get('view_change_latency_ms', 0):.1f}",
+                f"{metrics.get('participation_traceability', 1):.0%}",
                 f"{metrics.get('vrf_uniformity', 0):.3f}",
+                f"{metrics.get('vrf_diversity', 1):.3f}",
                 f"{metrics.get('compliance', 0):.0%}",
+                f"{metrics.get('zkp_success_rate', 1):.0%}",
+                f"{metrics.get('convergence_proxy', 0):.3f}",
+                f"{metrics.get('convergence_rounds', 0)}",
+                f"{metrics.get('final_loss', 0):.4f}",
+                f"{metrics.get('final_loss_normalized', 0):.4f}",
             ]
             rows.append(" & ".join(row) + r" \\")
         latex = r"""%% Tabela gerada automaticamente por experiments/result_extractor.py
@@ -62,7 +78,7 @@ class ResultExtractor:
 \caption{Resultados experimentais da arquitetura H-FedChain.}
 \label{tab:resultados}
 \centering
-\begin{tabular}{lcccccccc}
+\begin{tabular}{l""" + "c" * col_count + r"""}
 \toprule
 """ + " & ".join(headers) + r""" \\ \midrule
 """ + "\n".join(rows) + r"""

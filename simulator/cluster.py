@@ -12,7 +12,9 @@ class Cluster:
         devices_per_cluster: int,
         f: int,
         latency_ms: float,
+        cloud_latency_ms: float = 50.0,
         variant: str = "no_zkp",
+        snark_prove: bool = False,
     ):
         self.cluster_id = cluster_id
         self.orch = Orchestrator(
@@ -21,7 +23,9 @@ class Cluster:
             devices_per_cluster=devices_per_cluster,
             f=f,
             latency_ms=latency_ms,
+            cloud_latency_ms=cloud_latency_ms,
             variant=variant,
+            snark_prove=snark_prove,
         )
         self.orch.setup()
 
@@ -41,7 +45,9 @@ class Cluster:
         return await self.run_round(round_num)
 
     async def run_round(self, round_num: int) -> RegionalOutput:
-        result = await self.orch.run_round(round_num)
+        result = await self.orch.run_round(
+            round_num, fire_snark_verify=(round_num == 0)
+        )
         if not result.get("qc_emitted", False):
             raise RuntimeError(
                 f"Cluster {self.cluster_id} round {round_num} failed"
@@ -50,9 +56,14 @@ class Cluster:
         block = node.ledger._entries[-1].block
         return RegionalOutput(
             delta_w=block.gradient_hash,
+            delta_w_data=self.orch._last_delta_w_reg,
             stark_proof=block.stark_proof,
             qc_commit=block.qc_commit,
             n_devices=len(node.peers) + 1,
             round_num=round_num,
             cluster_id=self.cluster_id,
+            snark_proofs_total=result.get("snark_proofs_total", 0),
+            snark_verify_projected_ms=result.get("snark_verify_projected_ms", 0.0),
+            snark_sampled_passed=result.get("snark_sampled_passed", 1),
+            pipeline_latency_ms=result.get("latency", 0.0) * 1000,
         )

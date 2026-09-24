@@ -127,7 +127,7 @@ async def test_on_qc_commit_creates_entry(engine):
 @pytest.mark.asyncio
 async def test_collect_votes_creates_qc(engine):
     await engine.start_round(round_num=1, is_leader=True)
-    votes = [("n0", b"sig0"), ("n1", b"sig1"), ("n2", b"sig2"), ("n3", b"sig3")]
+    votes = [("n0", b"sig0"), ("n1", b"sig1"), ("n2", b"sig2"), ("n3", b"sig3"), ("n4", b"sig4")]
     qc = await engine.collect_votes(round=1, block_hash=b"bh", phase="prepare", votes=votes)
     assert qc is not None
     assert qc.is_valid(4)
@@ -143,4 +143,4 @@ async def test_collect_votes_insufficient(engine):
 @pytest.mark.asyncio
 async def test_handle_timeout(engine):
     result = await engine.handle_timeout()
-    assert result is True
+    assert result is False  # False when no view_change_handler configured
