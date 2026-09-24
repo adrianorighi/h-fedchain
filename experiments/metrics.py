@@ -60,6 +60,8 @@ class MetricsCollector:
         if len(leaders) < 2:
             return 1.0
         counts = Counter(leaders)
+        if len(counts) == 1:
+            return 0.0
         observed = [counts[k] for k in sorted(counts.keys())]
         _, p_value = chisquare(observed)
         return p_value

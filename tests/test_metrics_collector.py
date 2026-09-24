@@ -265,3 +265,11 @@ def test_new_metric_getters_missing_keys():
     assert mc.proof_gen_cpu_ms() == 0.0
     assert mc.proof_verify_cpu_ms() == 0.0
     assert mc.proof_size_bytes() == 0.0
+
+
+def test_vrf_election_uniformity_single_leader():
+    mc = MetricsCollector()
+    for _ in range(10):
+        mc.add_round({"latency": 1.0, "leader": "n1"})
+    uni = mc.vrf_election_uniformity()
+    assert uni == 0.0 and uni == uni  # finite, no NaN
