@@ -134,3 +134,66 @@ def test_load_configs_empty_file_warns(tmp_path):
     stats, _, warnings = gt.load_configs(tmp_path)
     assert "nominal" not in stats["scenario_1_nominal"]
     assert any("sem rounds" in w for w in warnings)
+
+
+def _write_all_configs(tmp_path, records=None):
+    records = records or make_records()
+    for scenario, configs in SCENARIO_CONFIGS.items():
+        for c in configs:
+            (tmp_path / gt.expected_file(scenario, c["label"])).write_text(
+                json.dumps(records))
+
+
+def test_build_criteria_full(tmp_path):
+    _write_all_configs(tmp_path)
+    stats, _, _ = gt.load_configs(tmp_path)
+    criteria, warn = gt.build_criteria(stats)
+    assert warn is None
+    assert criteria, "lista de critérios vazia"
+    for row in criteria:
+        assert isinstance(row["atende"], bool)
+        assert row["criterio"] and row["limiar"] is not None
+    dr = [r for r in criteria if r["criterio"] == "DR >= 95%"]
+    assert dr and all(r["atende"] for r in dr)
+
+
+def test_build_criteria_missing_config_skips(tmp_path):
+    (tmp_path / "scenario_1_nominal.json").write_text(json.dumps(make_records()))
+    stats, _, _ = gt.load_configs(tmp_path)
+    criteria, warn = gt.build_criteria(stats)
+    assert criteria is None
+    assert "faltando" in warn
+
+
+def test_csv_outputs(tmp_path):
+    _write_all_configs(tmp_path)
+    stats, aggs, _ = gt.load_configs(tmp_path)
+    out = tmp_path / "analise"
+    out.mkdir()
+    gt.write_csv(out / "estatisticas.csv", gt.stats_rows(stats),
+                 gt.STATS_FIELDS)
+    gt.write_csv(out / "metricas_por_config.csv", gt.config_rows(stats),
+                 gt.config_fields(stats))
+    criteria, _ = gt.build_criteria(stats)
+    gt.write_csv(out / "criterios.csv", criteria, gt.CRITERIA_FIELDS)
+    est = (out / "estatisticas.csv").read_text().splitlines()
+    assert est[0] == "scenario,config,metric,mean,std,ci95,cv,min,max,n"
+    assert len(est) == 1 + sum(len(m) for cfgs in stats.values() for m in cfgs.values())
+    cfg = (out / "metricas_por_config.csv").read_text().splitlines()
+    assert cfg[0].startswith("scenario,config,")
+    assert "proof_size_bytes" in cfg[0] and "cpu_percent" in cfg[0]
+    assert len(cfg) == 21  # header + 20 configs
+    crit = (out / "criterios.csv").read_text().splitlines()
+    assert crit[0] == "scenario,config,criterio,valor,limiar,atende,tipo"
+    assert len(crit) > 10
+
+
+def test_config_rows_derive_from_stats_not_aggregate():
+    recs = make_records(3)
+    for r in recs:
+        r["stage_time_ms"]["stark_gen"] = 0.5
+    recs[2]["stage_time_ms"]["stark_gen"] = 0.0
+    am, st = gt.config_stats(recs)
+    assert am["stage_time_ms"]["stark_gen"] == pytest.approx(0.5)
+    rows = gt.config_rows({"s": {"c": st}})
+    assert rows[0]["stage_time_ms.stark_gen"] == pytest.approx((0.5 + 0.5 + 0.0) / 3)

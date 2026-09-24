@@ -135,3 +135,60 @@ def load_configs(results_dir: Path) -> tuple[dict, dict, list[str]]:
             stats[scenario][lbl] = st
             aggs[scenario][lbl] = am
     return stats, aggs, warnings
+
+
+STATS_FIELDS = ["scenario", "config", "metric", "mean", "std", "ci95",
+                "cv", "min", "max", "n"]
+CRITERIA_FIELDS = ["scenario", "config", "criterio", "valor", "limiar",
+                   "atende", "tipo"]
+
+
+def build_criteria(stats: dict):
+    missing = [
+        f"{s}/{c['label']}"
+        for s, cfgs in SCENARIO_CONFIGS.items()
+        for c in cfgs if c["label"] not in stats.get(s, {})
+    ]
+    if missing:
+        return None, f"[AVISO] critérios pulados, configs faltando: {missing}"
+    return eval_criteria(stats, {}), None
+
+
+def write_csv(path: Path, rows: list[dict], fields: list[str]):
+    with open(path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=fields)
+        w.writeheader()
+        for row in rows:
+            w.writerow({k: row.get(k, "") for k in fields})
+
+
+def stats_rows(stats: dict) -> list[dict]:
+    rows = []
+    for scenario, cfgs in stats.items():
+        for lbl, metrics in cfgs.items():
+            for m, st in metrics.items():
+                rows.append({
+                    "scenario": scenario, "config": lbl, "metric": m,
+                    "mean": st["mean"], "std": st["std"], "ci95": st["ci95"],
+                    "cv": st["cv"], "min": st["min"], "max": st["max"],
+                    "n": st["n"],
+                })
+    return rows
+
+
+def config_rows(stats: dict) -> list[dict]:
+    rows = []
+    for scenario, cfgs in stats.items():
+        for lbl, metrics in cfgs.items():
+            row = {"scenario": scenario, "config": lbl}
+            row.update({p: st["mean"] for p, st in metrics.items()})
+            rows.append(row)
+    return rows
+
+
+def config_fields(stats: dict) -> list[str]:
+    keys = set()
+    for cfgs in stats.values():
+        for metrics in cfgs.values():
+            keys.update(metrics.keys())
+    return ["scenario", "config"] + sorted(keys)
