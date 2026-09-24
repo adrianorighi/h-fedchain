@@ -218,7 +218,8 @@ def build_resultados_tex(stats: dict) -> str:
             row = [CONFIG_ROW_LABEL[scenario](c)]
             for m in TABLE_METRICS:
                 key = lat_metric if m == "avg_latency" else m
-                row.append(fmt_cell(key, st.get(key, compute_stats([0.0]))))
+                cell = fmt_cell(key, st.get(key, compute_stats([0.0])))
+                row.append(cell.replace("%", r"\%"))
             lines.append(" & ".join(row) + r" \\")
     lines += [r"\bottomrule", r"\end{tabular}%", r"}", r"\end{table}"]
     return "\n".join(lines)

@@ -1,4 +1,5 @@
 import json
+import re
 
 import pytest
 
@@ -232,3 +233,17 @@ def test_overhead_tex_new_metrics(tmp_path):
                 "Fog$\\leftrightarrow$inter (MB)"):
         assert hdr in tex
     assert "1 Nominal" in tex and "5 stark" in tex
+
+
+def test_resultados_tex_escapes_percent_and_columns(tmp_path):
+    _write_all_configs(tmp_path)
+    stats, _, _ = gt.load_configs(tmp_path)
+    tex = gt.build_resultados_tex(stats)
+    lines = tex.splitlines()
+    data_rows = [ln for ln in lines if ln.endswith(r" \\")]
+    assert len(data_rows) == 20
+    header = next(ln for ln in lines if ln.endswith(r" \\ \midrule"))
+    ncols = header.count("&") + 1
+    for ln in data_rows:
+        assert ln.count("&") == ncols - 1
+        assert re.search(r"(?<!\\)%", ln) is None, f"unescaped % em: {ln}"
