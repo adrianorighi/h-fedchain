@@ -215,6 +215,53 @@ def test_all_metrics_includes_new():
         "participation_traceability", "view_change_frequency",
         "view_change_latency_ms", "view_change_resistance",
         "ledger_integrity", "state_divergence_rate", "stage_time_ms",
+        "cpu_percent", "memory_rss_bytes", "network_bytes",
+        "mb_edge_fog", "mb_fog_inter", "mb_fog_cloud",
+        "proof_gen_cpu_ms", "proof_verify_cpu_ms", "proof_size_bytes",
     ]
     for key in new_keys:
         assert key in metrics, f"Missing key: {key}"
+
+
+def test_new_metric_getters():
+    mc = MetricsCollector()
+    mc.add_round({
+        "round": 1, "latency": 1.0, "qc_emitted": True,
+        "num_adversarial": 0, "rejected_adversarial": 0,
+        "num_honest": 5, "falsely_rejected": 0,
+        "cpu_percent": 12.5, "memory_rss_bytes": 1024,
+        "network_bytes": 5000,
+        "bytes_edge_fog": 2_000_000,
+        "bytes_fog_inter": 1_000_000,
+        "bytes_fog_cloud": 500_000,
+        "proof_gen_cpu_ms": 10.0, "proof_verify_cpu_ms": 1.0,
+        "proof_size_bytes": 921,
+    })
+    assert mc.cpu_percent() == 12.5
+    assert mc.memory_rss_bytes() == 1024
+    assert mc.network_bytes() == 5000
+    assert mc.mb_edge_fog() == 2.0
+    assert mc.mb_fog_inter() == 1.0
+    assert mc.mb_fog_cloud() == 0.5
+    assert mc.proof_gen_cpu_ms() == 10.0
+    assert mc.proof_verify_cpu_ms() == 1.0
+    assert mc.proof_size_bytes() == 921
+    am = mc.all_metrics()
+    for k in ("cpu_percent", "memory_rss_bytes", "network_bytes",
+              "mb_edge_fog", "mb_fog_inter", "mb_fog_cloud",
+              "proof_gen_cpu_ms", "proof_verify_cpu_ms", "proof_size_bytes"):
+        assert k in am
+
+
+def test_new_metric_getters_missing_keys():
+    mc = MetricsCollector()
+    mc.add_round({"latency": 1.0})
+    assert mc.cpu_percent() == 0.0
+    assert mc.memory_rss_bytes() == 0.0
+    assert mc.network_bytes() == 0.0
+    assert mc.mb_edge_fog() == 0.0
+    assert mc.mb_fog_inter() == 0.0
+    assert mc.mb_fog_cloud() == 0.0
+    assert mc.proof_gen_cpu_ms() == 0.0
+    assert mc.proof_verify_cpu_ms() == 0.0
+    assert mc.proof_size_bytes() == 0.0

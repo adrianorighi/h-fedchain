@@ -139,6 +139,33 @@ class MetricsCollector:
                 if isinstance(r.get(key, 0), (int, float))]
         return statistics.mean(vals) if vals else 0.0
 
+    def cpu_percent(self) -> float:
+        return self._round_mean("cpu_percent")
+
+    def memory_rss_bytes(self) -> float:
+        return self._round_mean("memory_rss_bytes")
+
+    def network_bytes(self) -> float:
+        return self._round_mean("network_bytes")
+
+    def proof_gen_cpu_ms(self) -> float:
+        return self._round_mean("proof_gen_cpu_ms")
+
+    def proof_verify_cpu_ms(self) -> float:
+        return self._round_mean("proof_verify_cpu_ms")
+
+    def proof_size_bytes(self) -> float:
+        return self._round_mean("proof_size_bytes")
+
+    def mb_edge_fog(self) -> float:
+        return self._round_mean("bytes_edge_fog") / 1e6
+
+    def mb_fog_inter(self) -> float:
+        return self._round_mean("bytes_fog_inter") / 1e6
+
+    def mb_fog_cloud(self) -> float:
+        return self._round_mean("bytes_fog_cloud") / 1e6
+
     def stage_time_ms(self, stage: str = "") -> dict | float:
         """C_cpu — Tempo médio por estágio.
 
@@ -235,6 +262,15 @@ class MetricsCollector:
             "state_divergence_rate": self.state_divergence_rate(),
             "snark_proofs_total": self._round_mean("snark_proofs_total"),
             "snark_verify_projected_ms": self._round_mean("snark_verify_projected_ms"),
+            "cpu_percent": self.cpu_percent(),
+            "memory_rss_bytes": self.memory_rss_bytes(),
+            "network_bytes": self.network_bytes(),
+            "mb_edge_fog": self.mb_edge_fog(),
+            "mb_fog_inter": self.mb_fog_inter(),
+            "mb_fog_cloud": self.mb_fog_cloud(),
+            "proof_gen_cpu_ms": self.proof_gen_cpu_ms(),
+            "proof_verify_cpu_ms": self.proof_verify_cpu_ms(),
+            "proof_size_bytes": self.proof_size_bytes(),
             "stage_time_ms": self.stage_time_ms(),
         }
 
