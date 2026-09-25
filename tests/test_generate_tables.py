@@ -1,5 +1,6 @@
 import json
 import re
+from pathlib import Path
 
 import pytest
 
@@ -312,7 +313,7 @@ def test_build_markdown_sections(tmp_path):
     stats, aggs, warnings = gt.load_configs(tmp_path)
     criteria, _ = gt.build_criteria(stats)
     _, collectors, _ = gt.build_comparison(tmp_path)
-    md = gt.build_markdown(stats, criteria, warnings, collectors)
+    md = gt.build_markdown(stats, criteria, warnings, collectors, tmp_path)
     for section in ("# Análise de Resultados", "## Base dos dados",
                     "## Resumo executivo", "## Critérios",
                     "## Cenário 1", "## Cenário 2", "## Cenário 3",
@@ -321,3 +322,33 @@ def test_build_markdown_sections(tmp_path):
         assert section in md, section
     assert "| C1 nominal |" in md
     assert "| C3 rho_40 |" in md
+
+
+def test_build_markdown_fallbacks():
+    md = gt.build_markdown({}, None, [], {}, Path("."))
+    assert "_Critérios não avaliados (configurações faltando)._" in md
+    assert "_Dados de comparação indisponíveis._" in md
+
+
+def test_main_end_to_end(tmp_path, monkeypatch):
+    _write_all_configs(tmp_path)
+    for slug in ("h_fedchain", "fedsdm", "flcoin"):
+        (tmp_path / f"comparison_nominal_{slug}.json").write_text(
+            json.dumps(make_records(3)))
+    batch = tmp_path / "runs"
+    _make_batch(batch)
+    import experiments.analyze_results as ar
+    monkeypatch.setattr(ar, "RUNS_DIR", batch)
+    monkeypatch.setattr("sys.argv",
+                        ["generate_tables", "--dir", str(tmp_path)])
+    rc = gt.main()
+    assert rc == 0
+    out = tmp_path / "analise"
+    for name in ("estatisticas.csv", "criterios.csv",
+                 "metricas_por_config.csv", "tabela_resultados.tex",
+                 "tabela_overhead.tex", "tabela_comparacao.tex",
+                 "referencia_batch_antigo.csv", "analise_resultados.md"):
+        assert (out / name).exists(), name
+        assert (out / name).stat().st_size > 0
+    ref = (out / "referencia_batch_antigo.csv").read_text()
+    assert "rho_5" not in ref

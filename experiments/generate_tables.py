@@ -350,14 +350,15 @@ def _m(stats, scenario, lbl, metric, pct=False, nd=3):
     return _pct(v) if pct else f"{v:.{nd}f}"
 
 
-def build_markdown(stats, criteria, warnings, collectors) -> str:
+def build_markdown(stats, criteria, warnings, collectors,
+                   results_dir: Path) -> str:
     L = []
     A = L.append
-    A("# Análise de Resultados — H-FedChain (24-09-2026)")
+    A(f"# Análise de Resultados — H-FedChain ({results_dir.name})")
     A("")
     A("## Base dos dados")
     A("")
-    A("`results/24-09-2026/` — 5 cenários, 20 configurações, 1 execução por "
+    A(f"`{results_dir}/` — 5 cenários, 20 configurações, 1 execução por "
       "configuração (média ± desvio padrão sobre as rodadas). Inclui as "
       "métricas novas de CPU, memória, bytes por elo e provas. Referência "
       "secundária: batch antigo `results/runs/` (5 execuções, ρ=5% "
@@ -513,3 +514,59 @@ def build_markdown(stats, criteria, warnings, collectors) -> str:
         A("_Dados de comparação indisponíveis._")
     A("")
     return "\n".join(L)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(
+        description="Gera tabelas de resultados a partir de results/<data>/")
+    ap.add_argument("--dir", default="results/24-09-2026",
+                    help="diretório com os JSONs de cenário")
+    args = ap.parse_args()
+
+    results_dir = Path(args.dir)
+    if not results_dir.is_dir():
+        raise SystemExit(f"diretório não encontrado: {results_dir}")
+    out_dir = results_dir / "analise"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    stats, _aggs, warnings = load_configs(results_dir)
+    for w in warnings:
+        print(w, file=sys.stderr)
+
+    write_csv(out_dir / "estatisticas.csv", stats_rows(stats), STATS_FIELDS)
+    write_csv(out_dir / "metricas_por_config.csv", config_rows(stats),
+              config_fields(stats))
+
+    criteria, cw = build_criteria(stats)
+    if cw:
+        print(cw, file=sys.stderr)
+    if criteria is not None:
+        write_csv(out_dir / "criterios.csv", criteria, CRITERIA_FIELDS)
+
+    (out_dir / "tabela_resultados.tex").write_text(
+        build_resultados_tex(stats))
+    (out_dir / "tabela_overhead.tex").write_text(build_overhead_tex(stats))
+
+    tex, collectors, cmp_warnings = build_comparison(results_dir)
+    for w in cmp_warnings:
+        print(w, file=sys.stderr)
+    if tex is not None:
+        (out_dir / "tabela_comparacao.tex").write_text(tex)
+
+    batch_rows = build_batch_reference()
+    if batch_rows:
+        write_csv(out_dir / "referencia_batch_antigo.csv", batch_rows,
+                  ["scenario", "config", "metric", "mean", "std", "n"])
+    else:
+        print("[AVISO] batch antigo (results/runs/) sem dados",
+              file=sys.stderr)
+
+    md = build_markdown(stats, criteria, warnings, collectors, results_dir)
+    (out_dir / "analise_resultados.md").write_text(md)
+
+    print(f"-> Saídas em {out_dir}/")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
