@@ -314,6 +314,7 @@ def test_build_markdown_sections(tmp_path):
     criteria, _ = gt.build_criteria(stats)
     _, collectors, _ = gt.build_comparison(tmp_path)
     md = gt.build_markdown(stats, criteria, warnings, collectors, tmp_path)
+    assert str(tmp_path) in md
     for section in ("# Análise de Resultados", "## Base dos dados",
                     "## Resumo executivo", "## Critérios",
                     "## Cenário 1", "## Cenário 2", "## Cenário 3",
@@ -352,3 +353,5 @@ def test_main_end_to_end(tmp_path, monkeypatch):
         assert (out / name).stat().st_size > 0
     ref = (out / "referencia_batch_antigo.csv").read_text()
     assert "rho_5" not in ref
+    md_text = (out / "analise_resultados.md").read_text()
+    assert tmp_path.name in md_text

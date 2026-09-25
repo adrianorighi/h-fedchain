@@ -529,6 +529,10 @@ def main() -> int:
     out_dir = results_dir / "analise"
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    for name in ("criterios.csv", "tabela_comparacao.tex",
+                 "referencia_batch_antigo.csv"):
+        (out_dir / name).unlink(missing_ok=True)
+
     stats, _aggs, warnings = load_configs(results_dir)
     for w in warnings:
         print(w, file=sys.stderr)
@@ -561,7 +565,15 @@ def main() -> int:
         print("[AVISO] batch antigo (results/runs/) sem dados",
               file=sys.stderr)
 
-    md = build_markdown(stats, criteria, warnings, collectors, results_dir)
+    md_warnings = list(warnings)
+    if cw:
+        md_warnings.append(cw)
+    md_warnings += cmp_warnings
+    if not batch_rows:
+        md_warnings.append(
+            "[AVISO] batch antigo (results/runs/) sem dados — "
+            "referencia_batch_antigo.csv não gerado")
+    md = build_markdown(stats, criteria, md_warnings, collectors, results_dir)
     (out_dir / "analise_resultados.md").write_text(md)
 
     print(f"-> Saídas em {out_dir}/")
