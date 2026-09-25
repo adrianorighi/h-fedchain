@@ -302,3 +302,22 @@ def test_build_comparison_invalid_json(tmp_path):
     (tmp_path / "comparison_nominal_h_fedchain.json").write_text("{nope")
     with pytest.raises(SystemExit):
         gt.build_comparison(tmp_path)
+
+
+def test_build_markdown_sections(tmp_path):
+    _write_all_configs(tmp_path)
+    for slug in ("h_fedchain", "fedsdm", "flcoin"):
+        (tmp_path / f"comparison_nominal_{slug}.json").write_text(
+            json.dumps(make_records(3)))
+    stats, aggs, warnings = gt.load_configs(tmp_path)
+    criteria, _ = gt.build_criteria(stats)
+    _, collectors, _ = gt.build_comparison(tmp_path)
+    md = gt.build_markdown(stats, criteria, warnings, collectors)
+    for section in ("# Análise de Resultados", "## Base dos dados",
+                    "## Resumo executivo", "## Critérios",
+                    "## Cenário 1", "## Cenário 2", "## Cenário 3",
+                    "## Cenário 4", "## Cenário 5",
+                    "## Comparação com baselines"):
+        assert section in md, section
+    assert "| C1 nominal |" in md
+    assert "| C3 rho_40 |" in md

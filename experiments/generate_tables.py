@@ -336,3 +336,180 @@ def build_batch_reference() -> list[dict]:
                         "n": st["n"],
                     })
     return rows
+
+
+def _pct(x):
+    return f"{x:.1%}"
+
+
+def _m(stats, scenario, lbl, metric, pct=False, nd=3):
+    st = stats.get(scenario, {}).get(lbl, {}).get(metric)
+    if st is None:
+        return "—"
+    v = st["mean"]
+    return _pct(v) if pct else f"{v:.{nd}f}"
+
+
+def build_markdown(stats, criteria, warnings, collectors) -> str:
+    L = []
+    A = L.append
+    A("# Análise de Resultados — H-FedChain (24-09-2026)")
+    A("")
+    A("## Base dos dados")
+    A("")
+    A("`results/24-09-2026/` — 5 cenários, 20 configurações, 1 execução por "
+      "configuração (média ± desvio padrão sobre as rodadas). Inclui as "
+      "métricas novas de CPU, memória, bytes por elo e provas. Referência "
+      "secundária: batch antigo `results/runs/` (5 execuções, ρ=5% "
+      "excluído), em `referencia_batch_antigo.csv`.")
+    A("")
+    if warnings:
+        A("## Avisos")
+        A("")
+        for w in warnings:
+            A(f"- {w}")
+        A("")
+
+    A("## Resumo executivo")
+    A("")
+    A("| Config | Lat. (s) | SC | DR | FPR | T_BFT (ms) | I_ledger | D_rep |")
+    A("|---|---|---|---|---|---|---|---|")
+    A("| C1 nominal | " + " | ".join([
+        _m(stats, "scenario_1_nominal", "nominal", "avg_latency"),
+        _m(stats, "scenario_1_nominal", "nominal", "consensus_success", pct=True),
+        "—",
+        _m(stats, "scenario_1_nominal", "nominal", "false_positive_rate", pct=True),
+        _m(stats, "scenario_1_nominal", "nominal", "consensus_time_ms", nd=1),
+        _m(stats, "scenario_1_nominal", "nominal", "ledger_integrity", pct=True),
+        _m(stats, "scenario_1_nominal", "nominal", "state_divergence_rate", pct=True),
+    ]) + " |")
+    for c in SCENARIO_CONFIGS["scenario_2_scalability"]:
+        lbl = c["label"]
+        A(f"| C2 {lbl} | " + " | ".join([
+            _m(stats, "scenario_2_scalability", lbl, "core_latency"),
+            _m(stats, "scenario_2_scalability", lbl, "consensus_success", pct=True),
+            "—", "—",
+            _m(stats, "scenario_2_scalability", lbl, "consensus_time_ms", nd=1),
+            _m(stats, "scenario_2_scalability", lbl, "ledger_integrity", pct=True),
+            _m(stats, "scenario_2_scalability", lbl, "state_divergence_rate", pct=True),
+        ]) + " |")
+    for c in SCENARIO_CONFIGS["scenario_3_adversarial"]:
+        lbl = c["label"]
+        A(f"| C3 {lbl} | " + " | ".join([
+            _m(stats, "scenario_3_adversarial", lbl, "avg_latency"),
+            _m(stats, "scenario_3_adversarial", lbl, "consensus_success", pct=True),
+            _m(stats, "scenario_3_adversarial", lbl, "detection_rate", pct=True),
+            _m(stats, "scenario_3_adversarial", lbl, "false_positive_rate", pct=True),
+            "—",
+            _m(stats, "scenario_3_adversarial", lbl, "ledger_integrity", pct=True),
+            _m(stats, "scenario_3_adversarial", lbl, "state_divergence_rate", pct=True),
+        ]) + " |")
+    for c in SCENARIO_CONFIGS["scenario_4_interregional"]:
+        lbl = c["label"]
+        A(f"| C4 {lbl} | " + " | ".join([
+            _m(stats, "scenario_4_interregional", lbl, "avg_latency"),
+            _m(stats, "scenario_4_interregional", lbl, "consensus_success", pct=True),
+            "—", "—",
+            _m(stats, "scenario_4_interregional", lbl, "consensus_time_ms", nd=1),
+            _m(stats, "scenario_4_interregional", lbl, "ledger_integrity", pct=True),
+            _m(stats, "scenario_4_interregional", lbl, "state_divergence_rate", pct=True),
+        ]) + " |")
+    for v in SCENARIO_CONFIGS["scenario_5_zkp_overhead"]:
+        lbl = v["label"]
+        A(f"| C5 {lbl} | " + " | ".join([
+            _m(stats, "scenario_5_zkp_overhead", lbl, "avg_latency"),
+            _m(stats, "scenario_5_zkp_overhead", lbl, "consensus_success", pct=True),
+            "—", "—",
+            _m(stats, "scenario_5_zkp_overhead", lbl, "consensus_time_ms", nd=1),
+            _m(stats, "scenario_5_zkp_overhead", lbl, "ledger_integrity", pct=True),
+            _m(stats, "scenario_5_zkp_overhead", lbl, "state_divergence_rate", pct=True),
+        ]) + " |")
+    A("")
+    A("> C2 reporta L_core (pipeline sem geração de provas); os demais "
+      "cenários reportam L_total.")
+    A("")
+
+    A("## Critérios (Seção 5.3)")
+    A("")
+    if criteria:
+        A("| Cenário | Config | Critério | Valor | Limiar | Atende |")
+        A("|---|---|---|---|---|---|")
+        for r in criteria:
+            ok = "✅" if r["atende"] else "❌"
+            A(f"| {r['scenario']} | {r['config']} | "
+              f"{r['criterio']} | {r['valor']:g} | {r['limiar']:g} | {ok} |")
+    else:
+        A("_Critérios não avaliados (configurações faltando)._")
+    A("")
+
+    A("## Cenário 1 — Nominal")
+    A("")
+    A(f"- Latência/rodada: {_m(stats, 'scenario_1_nominal', 'nominal', 'avg_latency')}s; "
+      f"consenso: {_m(stats, 'scenario_1_nominal', 'nominal', 'consensus_time_ms', nd=1)}ms; "
+      f"SC: {_m(stats, 'scenario_1_nominal', 'nominal', 'consensus_success', pct=True)}; "
+      f"auditoria: {_m(stats, 'scenario_1_nominal', 'nominal', 'compliance', pct=True)}.")
+    A("")
+
+    A("## Cenário 2 — Escalabilidade (40–400 dispositivos)")
+    A("")
+    for c in SCENARIO_CONFIGS["scenario_2_scalability"]:
+        lbl = c["label"]
+        A(f"- {lbl}: L_core={_m(stats, 'scenario_2_scalability', lbl, 'core_latency')}s, "
+          f"L_total={_m(stats, 'scenario_2_scalability', lbl, 'avg_latency')}s, "
+          f"STARK gen={_m(stats, 'scenario_2_scalability', lbl, 'stage_time_ms.stark_gen', nd=0)}ms.")
+    A("")
+
+    A("## Cenário 3 — Adversarial")
+    A("")
+    for c in SCENARIO_CONFIGS["scenario_3_adversarial"]:
+        lbl = c["label"]
+        A(f"- {lbl}: DR={_m(stats, 'scenario_3_adversarial', lbl, 'detection_rate', pct=True)}, "
+          f"FPR={_m(stats, 'scenario_3_adversarial', lbl, 'false_positive_rate', pct=True)}, "
+          f"SC={_m(stats, 'scenario_3_adversarial', lbl, 'consensus_success', pct=True)}.")
+    A("")
+
+    A("## Cenário 4 — Inter-regional")
+    A("")
+    for c in SCENARIO_CONFIGS["scenario_4_interregional"]:
+        lbl = c["label"]
+        A(f"- {lbl}: latência={_m(stats, 'scenario_4_interregional', lbl, 'avg_latency')}s, "
+          f"VRF={_m(stats, 'scenario_4_interregional', lbl, 'stage_time_ms.vrf_elect', nd=1)}ms, "
+          f"STARK inter={_m(stats, 'scenario_4_interregional', lbl, 'stage_time_ms.stark_gen_inter', nd=1)}ms.")
+    A("")
+
+    A("## Cenário 5 — Overhead ZKP")
+    A("")
+    for v in SCENARIO_CONFIGS["scenario_5_zkp_overhead"]:
+        lbl = v["label"]
+        A(f"- {lbl}: latência={_m(stats, 'scenario_5_zkp_overhead', lbl, 'avg_latency')}s, "
+          f"bloco={_m(stats, 'scenario_5_zkp_overhead', lbl, 'block_size_bytes', nd=0)}B, "
+          f"proof gen={_m(stats, 'scenario_5_zkp_overhead', lbl, 'proof_gen_cpu_ms', nd=0)}ms.")
+    A("")
+
+    A("## Comparação com baselines")
+    A("")
+    if collectors:
+        names = list(collectors)
+        A("| Métrica | " + " | ".join(names) + " |")
+        A("|---|" + "|".join("---" for _ in names) + "|")
+        for label, key in COMPARISON_METRICS:
+            vals = []
+            for name in names:
+                v = collectors[name].all_metrics().get(key, 0)
+                if key in ("detection_rate", "false_positive_rate",
+                           "consensus_success", "compliance",
+                           "vrf_uniformity"):
+                    vals.append(f"{v:.1%}")
+                elif key in ("block_size_bytes", "comm_overhead_bytes"):
+                    vals.append(f"{v:.0f}")
+                elif key == "avg_latency":
+                    vals.append(f"{v:.4f}")
+                elif key == "consensus_time_ms":
+                    vals.append(f"{v:.1f}")
+                else:
+                    vals.append(f"{v:.2f}")
+            A(f"| {label} | " + " | ".join(vals) + " |")
+    else:
+        A("_Dados de comparação indisponíveis._")
+    A("")
+    return "\n".join(L)
