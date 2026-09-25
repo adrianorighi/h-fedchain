@@ -2,6 +2,58 @@ import numpy as np
 from typing import Optional
 
 
+_WEIGHT_KEYS = ("W1", "b1", "W2", "b2")
+
+
+def flatten_weights(weights: dict) -> np.ndarray:
+    """Flatten an MLP weight dict into a 1D vector.
+
+    Uses the canonical order W1, b1, W2, b2 — identical to the
+    concatenation order in ``MLP.compute_gradient``.
+
+    Args:
+        weights: dict with keys W1, b1, W2, b2 (numpy arrays)
+
+    Returns:
+        1D numpy array (dtype follows the input arrays)
+    """
+    return np.concatenate([weights[key].ravel() for key in _WEIGHT_KEYS])
+
+
+def unflatten_weights(flat: np.ndarray, like: dict) -> dict:
+    """Split a flat vector back into an MLP weight dict.
+
+    Shapes are taken from the reference dict ``like``; order is the
+    canonical W1, b1, W2, b2 (same as ``MLP.compute_gradient``).
+
+    Args:
+        flat: 1D numpy array of concatenated parameters
+        like: reference dict with keys W1, b1, W2, b2 (shapes/dtypes)
+
+    Returns:
+        dict with keys W1, b1, W2, b2, each reshaped to the
+        corresponding shape in ``like`` (dtype preserved from ``flat``)
+
+    Raises:
+        ValueError: if ``flat.size`` differs from the total parameter
+            size of ``like``
+    """
+    expected = sum(np.prod(like[key].shape) for key in _WEIGHT_KEYS)
+    if flat.size != expected:
+        raise ValueError(
+            f"flat size {flat.size} does not match reference weight "
+            f"size {int(expected)}"
+        )
+    result = {}
+    offset = 0
+    for key in _WEIGHT_KEYS:
+        shape = like[key].shape
+        size = int(np.prod(shape))
+        result[key] = flat[offset:offset + size].reshape(shape)
+        offset += size
+    return result
+
+
 class MLP:
     """2-layer MLP: input(12000) → hidden(64, ReLU) → output(5, softmax).
 

@@ -26,11 +26,18 @@ class EdgeWorker:
         certificate: Optional[Certificate] = None,
         ca_vk: Optional[bytes] = None,
         use_encryption: bool = False,
+        keypair: Optional[tuple[bytes, bytes]] = None,
+        forge_signature: Optional[bool] = None,
     ):
         self.device_id = device_id
         self.indices = indices
         self.is_adversarial = is_adversarial
         self.attack_type = attack_type
+        # None → legacy simulator behavior (adversaries forge the signature)
+        self.forge_signature = (
+            bool(is_adversarial) if forge_signature is None
+            else bool(forge_signature)
+        )
         self.num_classes = num_classes
         self.use_snark = use_snark
         self.certificate = certificate
@@ -53,7 +60,10 @@ class EdgeWorker:
             num_classes=num_classes,
         )
 
-        self.sk, self.vk = generate_keypair()
+        if keypair is not None:
+            self.sk, self.vk = keypair
+        else:
+            self.sk, self.vk = generate_keypair()
         if self.use_snark:
             self.snark_prover = SnarkProver()
 
@@ -74,10 +84,10 @@ class EdgeWorker:
         else:
             grad = self.model.compute_gradient(self.X, y_effective, global_weights)
 
-        from core.pki import generate_keypair, sign as pki_sign
+        from core.pki import generate_keypair, gradient_signed_message, sign as pki_sign
 
-        msg = f"{self.device_id}:{round_num}".encode()
-        if self.is_adversarial:
+        msg = gradient_signed_message(self.device_id, round_num, grad.tolist())
+        if self.forge_signature:
             fake_sk, _ = generate_keypair()
             gradient_signature = pki_sign(fake_sk, msg)
         else:

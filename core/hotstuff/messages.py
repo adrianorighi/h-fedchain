@@ -33,6 +33,7 @@ class ViewChangeMessage:
     new_view: int
     highest_qc: Optional[QuorumCertificate]
     signature: bytes
+    round: int
 
 
 @dataclass

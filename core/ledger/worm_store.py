@@ -1,6 +1,9 @@
+import logging
 import pickle
 from typing import Optional
 from hfc_types.block import GlobalOutput
+
+logger = logging.getLogger(__name__)
 
 try:
     import sqlite3
@@ -15,6 +18,13 @@ class WormStore:
         self._db_path = db_path
         if db_path and HAS_SQLITE:
             self._init_db()
+        elif db_path:
+            # Configured persistence with no backend must not be a silent
+            # no-op: entries would vanish on restart without anyone noticing.
+            logger.warning(
+                "WORM db_path=%s configured but sqlite3 is unavailable; "
+                "entries will not be persisted across restarts", db_path,
+            )
 
     def _init_db(self):
         conn = sqlite3.connect(self._db_path)
@@ -34,8 +44,11 @@ class WormStore:
         if not self._db_path or not HAS_SQLITE:
             return
         conn = sqlite3.connect(self._db_path)
+        # INSERT OR IGNORE, not REPLACE: the dup check above is per-instance,
+        # so a stale instance can reach this call for an already-stored round.
+        # The ledger is append-only — the first record for a round wins.
         conn.execute(
-            "INSERT OR REPLACE INTO global_outputs (round, data) VALUES (?, ?)",
+            "INSERT OR IGNORE INTO global_outputs (round, data) VALUES (?, ?)",
             (entry.round_num, pickle.dumps(entry)),
         )
         conn.commit()

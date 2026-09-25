@@ -1,0 +1,6 @@
+# Namespace for the h-fedchain distributed (k8s) deployment.
+# Apply first: kubectl apply -f k8s/namespace.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: h-fedchain

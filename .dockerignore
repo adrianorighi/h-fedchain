@@ -1,0 +1,16 @@
+# Build-context hygiene: keep the image context small and deterministic.
+.git
+.venv
+.worktrees
+.pytest_cache
+**/__pycache__
+**/*.pyc
+*.egg-info
+h_fedchain.egg-info
+results
+out
+artigo
+docs
+plans
+specs
+.opencode

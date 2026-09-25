@@ -1,0 +1,35 @@
+# kind cluster for the H-FedChain local e2e (T14).
+#
+# Topology: broker + fogs + edges run in docker compose (network hfc-net);
+# only the cloud runs inside this cluster. The cluster name is passed on the
+# command line (`kind create cluster --name h-fedchain` — scripts/setup-kind.sh),
+# not via a `name:` field, so this file stays valid across kind versions.
+#
+# Reachability is wired at deploy time (the gateway IP is dynamic), NOT here:
+#   * kind pod -> host compose broker (MQTT):
+#       scripts/deploy-cloud.sh resolves the `kind` network gateway and
+#       substitutes the MQTT_BROKER placeholder in k8s/cloud-configmap.yaml;
+#       if the gateway is unreachable from the pod it falls back to attaching
+#       the hfc-broker container to the kind network.
+#   * compose fogs -> cloud (gRPC):
+#       k8s/cloud-service.yaml exposes NodePort 30052; deploy-cloud.sh runs
+#       `docker network connect <compose-net> h-fedchain-control-plane` so the
+#       fogs use CLOUD_ADDRESS=h-fedchain-control-plane:30052 (set by the
+#       deploy/docker-compose.e2e.yml override).
+# A static `hostAliases` entry is therefore intentionally NOT used.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      # cloud gRPC (Service NodePort 30052) reachable from the host as
+      # 127.0.0.1:30052 (debugging only — compose fogs go through the
+      # docker network, not through this mapping).
+      - containerPort: 30052
+        hostPort: 30052
+        listenAddress: "127.0.0.1"
+        protocol: TCP
+    # NOTE: no 1883 mapping — mosquitto runs in compose on the host and
+    # already publishes 1883:1883; mapping it here would clash with the
+    # compose broker. In-cluster access uses the kind network gateway IP
+    # (substituted dynamically by scripts/deploy-cloud.sh).

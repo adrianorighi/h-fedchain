@@ -78,7 +78,7 @@ class TestHotStuffEngine:
         assert vote.round == 1
 
     @pytest.mark.asyncio
-    async def test_double_prepare_returns_none(self, engine):
+    async def test_double_prepare_same_block_resent(self, engine):
         await engine.start_round(round_num=1, is_leader=False)
         proposal = Block(
             round=1, gradient_hash=b"gh", qc_commit=None,
@@ -87,7 +87,7 @@ class TestHotStuffEngine:
         )
         await engine.on_prepare(proposal)
         vote2 = await engine.on_prepare(proposal)
-        assert vote2 is None
+        assert vote2 is not None
 
     @pytest.mark.asyncio
     async def test_full_flow(self, engine):
@@ -159,7 +159,7 @@ class TestViewChange:
         from core.pki import generate_keypair
         sk, vk = generate_keypair()
         view_change.record_highest_qc(round=1, qc=b"some_qc")
-        msg = view_change.create_view_change(node_id="n3", new_view=6, sk=sk)
+        msg = view_change.create_view_change(node_id="n3", new_view=6, sk=sk, round=6)
         assert msg.new_view == 6
         assert msg.node_id == "n3"
         assert msg.highest_qc == (1, b"some_qc")

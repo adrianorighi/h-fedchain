@@ -25,6 +25,18 @@ message GradientResponse {
 // FOG ↔ FOG (HotStuff Consensus — gRPC streaming)
 // ============================================================
 
+message KeyExchange {
+  string node_id = 1;
+  bytes vk = 2;
+}
+
+message VrfShare {
+  string node_id = 1;
+  int32 round = 2;
+  bytes y = 3;
+  bytes proof = 4;
+}
+
 message ConsensusMessage {
   oneof msg {
     PrepareProposal prepare = 1;
@@ -32,6 +44,8 @@ message ConsensusMessage {
     QcBroadcast qc = 3;
     ViewChangeMessage view_change = 4;
     NewViewMessage new_view = 5;
+    KeyExchange key_exchange = 6;
+    VrfShare vrf_share = 7;
   }
 }
 
@@ -62,6 +76,7 @@ message ViewChangeMessage {
   int32 new_view = 2;
   bytes highest_qc = 3;              // serialized highest QC
   bytes signature = 4;
+  int32 round = 5;
 }
 
 message NewViewMessage {
@@ -89,6 +104,7 @@ message ClusterOutput {
   optional bytes stark_proof = 4;    // STARK proof of aggregation
   optional bytes qc_commit = 5;      // serialized QuorumCertificate
   int32 n_devices = 6;
+  bytes gradient_hash = 7;           // sha256(delta_w) as committed in the block
 }
 
 message GlobalOutputMessage {

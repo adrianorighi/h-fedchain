@@ -1,13 +1,25 @@
+# Cloud service: single-replica inter-cluster aggregator.
+#
+# Replicas MUST stay 1: the WORM (write-once) SQLite ledger at WORM_DB_PATH
+# assumes a single writer, and the round-aggregation gate is per-pod state.
+# This is also why no HPA is defined for it (see Report).
+#
+# Image: hfedchain-services:latest built from services/Dockerfile.
+# imagePullPolicy: Never because the image is side-loaded into kind, not
+# pulled from a registry:
+#   docker build -f services/Dockerfile -t hfedchain-services:latest .
+#   kind load docker-image hfedchain-services:latest
+# (T14 performs the build/load.)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: cloud-service
-  namespace: hfedchain
+  name: cloud
+  namespace: h-fedchain
   labels:
     app: hfedchain
     component: cloud
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: hfedchain
@@ -20,28 +32,33 @@ spec:
     spec:
       containers:
       - name: cloud
-        image: hfedchain/cloud:latest
+        image: hfedchain-services:latest
+        imagePullPolicy: Never
+        # No command override: image CMD is `python -m services.entrypoint`
+        # (services/Dockerfile); SERVICE=cloud comes from cloud-config.
         ports:
-        - containerPort: 50051
-          name: grpc
+        - name: grpc
+          containerPort: 50052
+          protocol: TCP
         envFrom:
         - configMapRef:
             name: cloud-config
+        readinessProbe:
+          tcpSocket:
+            port: 50052
+          initialDelaySeconds: 3
+          periodSeconds: 5
         resources:
           requests:
-            memory: "512Mi"
-            cpu: "500m"
+            memory: "128Mi"
+            cpu: "100m"
           limits:
-            memory: "2Gi"
-            cpu: "2"
+            memory: "512Mi"
+            cpu: "1"
         volumeMounts:
-        - name: worm-storage
-          mountPath: /data/worm
-        - name: model-storage
-          mountPath: /data/models
+        - name: hfc-data
+          mountPath: /var/lib/hfc
       volumes:
-      - name: worm-storage
+      - name: hfc-data
         persistentVolumeClaim:
           claimName: cloud-worm-pvc
-      - name: model-storage
-        emptyDir: {}

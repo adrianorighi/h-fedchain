@@ -268,6 +268,15 @@ def test_build_comparison_missing_all(tmp_path):
     assert any("comparação ausente" in w for w in warnings)
 
 
+def test_build_comparison_escapes_percent(tmp_path):
+    for slug in ("h_fedchain", "fedsdm", "flcoin"):
+        (tmp_path / f"comparison_nominal_{slug}.json").write_text(
+            json.dumps(make_records(3)))
+    tex, _, _ = gt.build_comparison(tmp_path)
+    assert re.search(r"(?<!\\)%", tex) is None
+    assert r"100.0\%" in tex
+
+
 def _make_batch(tmp_path):
     import experiments.analyze_results as ar
     for lbl in ("rho_0", "rho_5", "rho_20"):
@@ -355,3 +364,27 @@ def test_main_end_to_end(tmp_path, monkeypatch):
     assert "rho_5" not in ref
     md_text = (out / "analise_resultados.md").read_text()
     assert tmp_path.name in md_text
+
+
+def test_main_removes_stale_conditional_outputs(tmp_path, monkeypatch):
+    (tmp_path / "scenario_1_nominal.json").write_text(json.dumps(make_records()))
+    out = tmp_path / "analise"
+    out.mkdir()
+    for name in ("criterios.csv", "tabela_comparacao.tex",
+                 "referencia_batch_antigo.csv"):
+        (out / name).write_text("stale content")
+    batch = tmp_path / "runs"
+    _make_batch(batch)
+    import experiments.analyze_results as ar
+    monkeypatch.setattr(ar, "RUNS_DIR", batch)
+    monkeypatch.setattr("sys.argv",
+                        ["generate_tables", "--dir", str(tmp_path)])
+    assert gt.main() == 0
+    assert not (out / "criterios.csv").exists()      # criteria skipped (configs faltando)
+    assert not (out / "tabela_comparacao.tex").exists()  # comparison absent
+    # batch reference still written (RUNS_DIR patched to fixture):
+    assert "stale" not in (out / "referencia_batch_antigo.csv").read_text()
+    md = (out / "analise_resultados.md").read_text()
+    assert "## Avisos" in md
+    assert "comparação ausente" in md
+    assert "critérios pulados" in md

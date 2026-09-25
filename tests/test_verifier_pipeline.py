@@ -5,11 +5,13 @@ from hfc_types.messages import Gradient, GradientWithProof
 
 
 def _make_grad(node_id, round_num, sk, data=None):
-    msg = f"{node_id}:{round_num}".encode()
+    from core.pki.gradient import gradient_signed_message
+    grad_data = data or [0.1, 0.2]
+    msg = gradient_signed_message(node_id, round_num, grad_data)
     sig = sign(sk, msg)
     return GradientWithProof(
         gradient=Gradient(node_id=node_id, round=round_num,
-                         data=data or [0.1, 0.2],
+                         data=grad_data,
                          signature=sig),
         snark_proof=None
     )

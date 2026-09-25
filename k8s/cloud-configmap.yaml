@@ -1,10 +1,49 @@
+# Environment for the cloud service (inter-cluster aggregator).
+#
+# Keys MUST match services/entrypoint.py build_cloud_service():
+#   GRPC_PORT            entrypoint.py:105  (default "50052")
+#   N_EXPECTED_CLUSTERS  entrypoint.py:106  (default "1")
+#   LEARNING_RATE        entrypoint.py:107  (default "0.01")
+#   MQTT_BROKER          entrypoint.py:108  (default "mqtt-broker")
+#   MQTT_PORT            entrypoint.py:109  (default "1883")
+#   MQTT_ENABLED         entrypoint.py:61   (via mqtt_enabled_from_env, called at :110)
+#   WORM_DB_PATH         entrypoint.py:111  (default None)
+# and SERVICE (entrypoint.py:133) which selects the cloud branch of main().
+#
+# Placeholder values are generic on purpose: T14 (e2e in kind) overrides
+# MQTT_BROKER/N_EXPECTED_CLUSTERS at deploy time (kustomize/sed/env).
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: cloud-config
-  namespace: hfedchain
+  namespace: h-fedchain
 data:
-  MODEL_REGISTRY_PATH: "/data/models"
-  LEDGER_WORM_PATH: "/data/worm"
-  VERIFICATION_TIMEOUT_MS: "5000"
-  LOG_LEVEL: "INFO"
+  # Image CMD is `python -m services.entrypoint` (services/Dockerfile), whose
+  # default SERVICE is "fog" — must be set explicitly for the cloud pod.
+  SERVICE: "cloud"
+  # gRPC listen port for fog cluster-output submissions (cloud is 50052;
+  # 50051 is the fog port).
+  GRPC_PORT: "50052"
+  # Aggregate a round only after N_EXPECTED_CLUSTERS clusters report.
+  # "2" matches the local e2e compose stack (cluster c1 + c2); the in-cluster
+  # cloud is the inter-cluster aggregator.
+  N_EXPECTED_CLUSTERS: "2"
+  # WORM (write-once) SQLite ledger — file lives on the PVC mounted at
+  # /var/lib/hfc (single replica = single writer; see cloud-hpa removal note).
+  WORM_DB_PATH: "/var/lib/hfc/worm.db"
+  # MQTT broker used to publish models/global (retained).
+  # Placeholder: scripts/deploy-cloud.sh substitutes it with the `kind`
+  # network gateway IP (host) at deploy time — sed of this file piped into
+  # kubectl apply — falling back to the broker container's kind-network IP
+  # if the gateway is unreachable from the pod. kind extraPortMappings/
+  # hostAliases are deliberately not used (the gateway is dynamic).
+  MQTT_BROKER: "mosquitto.local"
+  MQTT_PORT: "1883"
+  # "0"/"false"/"no" disable MQTT; anything else (incl. unset) enables it.
+  MQTT_ENABLED: "1"
+  # Read by services/entrypoint.py:81 (fog branch only) — the cloud branch
+  # ignores it; kept so the pod's key layout under /var/lib/hfc matches the
+  # compose volume (hfc-keys:/var/lib/hfc).
+  NODE_KEY_FILE: "/var/lib/hfc/keys/cloud.key"
+  # Used when a round payload carries no learning rate.
+  LEARNING_RATE: "0.01"

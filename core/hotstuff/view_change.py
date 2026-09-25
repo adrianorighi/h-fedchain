@@ -35,10 +35,10 @@ class ViewChangeHandler:
         return leader
 
     def create_view_change(
-        self, node_id: str, new_view: int, sk: bytes
+        self, node_id: str, new_view: int, sk: bytes, round: int
     ) -> ViewChangeMessage:
         highest_qc = self._highest_qc
-        msg = str(new_view).encode()
+        msg = str(round).encode()
         if highest_qc:
             msg += highest_qc[1]
         sig = pki_sign(sk, msg)
@@ -47,6 +47,7 @@ class ViewChangeHandler:
             new_view=new_view,
             highest_qc=highest_qc,
             signature=sig,
+            round=round,
         )
 
     def create_new_view(

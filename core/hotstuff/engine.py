@@ -1,3 +1,4 @@
+import logging
 from dataclasses import replace
 from typing import Optional
 from hfc_types.block import Block, QuorumCertificate, LedgerEntry
@@ -6,6 +7,8 @@ from core.hotstuff.quorum import QuorumCertifier
 from core.hotstuff.messages import PrepareProposal, VoteMessage
 from core.hotstuff.view_change import ViewChangeHandler
 from core.pki import sign as pki_sign
+
+logger = logging.getLogger(__name__)
 
 
 class HotStuffEngine:
@@ -31,9 +34,9 @@ class HotStuffEngine:
         self.round = 0
         self.current_view = 1
         self.state = "IDLE"
-        self._voted_prepare: set[int] = set()
-        self._voted_pre_commit: set[int] = set()
-        self._voted_commit: set[int] = set()
+        self._voted_prepare: dict[int, bytes] = {}
+        self._voted_pre_commit: dict[int, bytes] = {}
+        self._voted_commit: dict[int, bytes] = {}
         self._last_proposal: Optional[Block] = None
 
     async def start_round(self, round_num: int, is_leader: bool) -> None:
@@ -54,12 +57,27 @@ class HotStuffEngine:
             block=block,
         )
 
+    @staticmethod
+    def _record_vote(
+        voted: dict[int, bytes], round_num: int, block_hash: bytes
+    ) -> bool:
+        previous = voted.get(round_num)
+        if previous is not None and previous != block_hash:
+            return False
+        voted[round_num] = block_hash
+        return True
+
     async def on_prepare(self, proposal: Block) -> Optional[VoteMessage]:
-        if proposal.round in self._voted_prepare:
+        if not self._record_vote(
+            self._voted_prepare, proposal.round, proposal.hash
+        ):
             return None
-        self._voted_prepare.add(proposal.round)
         self._last_proposal = proposal
-        msg = str(self.round).encode() + proposal.hash + MessageType.PREPARE.name.encode()
+        msg = (
+            str(proposal.round).encode()
+            + proposal.hash
+            + MessageType.PREPARE.name.encode()
+        )
         sig = pki_sign(self.sk, msg)
         return VoteMessage(
             node_id=self.node_id,
@@ -69,11 +87,33 @@ class HotStuffEngine:
             signature=sig,
         )
 
-    async def on_pre_commit(self, qc: QuorumCertificate) -> Optional[VoteMessage]:
-        if qc.round in self._voted_pre_commit:
+    async def on_pre_commit(
+        self, qc: QuorumCertificate, vk_map: Optional[dict] = None
+    ) -> Optional[VoteMessage]:
+        if vk_map is not None:
+            quorum = self.quorum_certifier.quorum_size(self.n)
+            if qc.msg_type is not MessageType.PREPARE:
+                logger.warning(
+                    "Rejected pre_commit vote for round %d: QC phase is %s, "
+                    "expected PREPARE", qc.round, qc.msg_type.name,
+                )
+                return None
+            if not qc.is_valid(quorum, vk_map):
+                logger.warning(
+                    "Rejected pre_commit vote for round %d: QC invalid under "
+                    "vk_map (%d signatures, quorum %d)",
+                    qc.round, len(qc.signatures), quorum,
+                )
+                return None
+        if not self._record_vote(
+            self._voted_pre_commit, qc.round, qc.block_hash
+        ):
             return None
-        self._voted_pre_commit.add(qc.round)
-        msg = str(self.round).encode() + qc.block_hash + MessageType.PRE_COMMIT.name.encode()
+        msg = (
+            str(qc.round).encode()
+            + qc.block_hash
+            + MessageType.PRE_COMMIT.name.encode()
+        )
         sig = pki_sign(self.sk, msg)
         return VoteMessage(
             node_id=self.node_id,
@@ -83,11 +123,31 @@ class HotStuffEngine:
             signature=sig,
         )
 
-    async def on_commit(self, qc: QuorumCertificate) -> Optional[VoteMessage]:
-        if qc.round in self._voted_commit:
+    async def on_commit(
+        self, qc: QuorumCertificate, vk_map: Optional[dict] = None
+    ) -> Optional[VoteMessage]:
+        if vk_map is not None:
+            quorum = self.quorum_certifier.quorum_size(self.n)
+            if qc.msg_type is not MessageType.PRE_COMMIT:
+                logger.warning(
+                    "Rejected commit vote for round %d: QC phase is %s, "
+                    "expected PRE_COMMIT", qc.round, qc.msg_type.name,
+                )
+                return None
+            if not qc.is_valid(quorum, vk_map):
+                logger.warning(
+                    "Rejected commit vote for round %d: QC invalid under "
+                    "vk_map (%d signatures, quorum %d)",
+                    qc.round, len(qc.signatures), quorum,
+                )
+                return None
+        if not self._record_vote(self._voted_commit, qc.round, qc.block_hash):
             return None
-        self._voted_commit.add(qc.round)
-        msg = str(self.round).encode() + qc.block_hash + MessageType.COMMIT.name.encode()
+        msg = (
+            str(qc.round).encode()
+            + qc.block_hash
+            + MessageType.COMMIT.name.encode()
+        )
         sig = pki_sign(self.sk, msg)
         return VoteMessage(
             node_id=self.node_id,
@@ -97,7 +157,36 @@ class HotStuffEngine:
             signature=sig,
         )
 
-    async def on_qc_commit(self, qc: QuorumCertificate) -> Optional[LedgerEntry]:
+    async def on_qc_commit(
+        self, qc: QuorumCertificate, vk_map: Optional[dict] = None
+    ) -> Optional[LedgerEntry]:
+        if qc.msg_type is not MessageType.COMMIT:
+            logger.warning(
+                "Rejected QC commit for round %d: certificate phase is %s, "
+                "expected COMMIT", qc.round, qc.msg_type.name,
+            )
+            return None
+        if self._last_proposal is not None:
+            if (
+                qc.block_hash != self._last_proposal.hash
+                or qc.round != self._last_proposal.round
+            ):
+                logger.warning(
+                    "Rejected QC commit for round %d: QC does not match last "
+                    "proposal (qc round %d, qc hash %s, proposal hash %s)",
+                    qc.round, qc.round, qc.block_hash.hex(),
+                    self._last_proposal.hash.hex(),
+                )
+                return None
+        if vk_map is not None:
+            quorum = self.quorum_certifier.quorum_size(self.n)
+            if not qc.is_valid(quorum, vk_map):
+                logger.warning(
+                    "Rejected QC commit for round %d: QC invalid under vk_map "
+                    "(%d signatures, quorum %d)",
+                    qc.round, len(qc.signatures), quorum,
+                )
+                return None
         self.state = "DECIDED"
         if self._last_proposal is not None:
             block = replace(self._last_proposal, qc_commit=qc)
@@ -156,6 +245,6 @@ class HotStuffEngine:
             return False
         self.state = "VIEW_CHANGE"
         vc_msg = self.view_change_handler.create_view_change(
-            self.node_id, self.current_view + 1, self.sk
+            self.node_id, self.current_view + 1, self.sk, round=self.round
         )
         return True

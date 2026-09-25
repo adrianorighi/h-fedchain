@@ -2,27 +2,30 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system deps for cryptography
+# Build fallback for sdist-only packages (cryptography ships wheels on
+# common platforms; gcc/libffi-dev kept as a safety net)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc libffi-dev && rm -rf /var/lib/apt/lists/*
 
-# Copy project package
-COPY pyproject.toml /app/h-fedchain/
-COPY hfc_types/ /app/h-fedchain/hfc_types/
-COPY core/ /app/h-fedchain/core/
-COPY zkp/ /app/h-fedchain/zkp/
-COPY proto/ /app/h-fedchain/proto/
+# Dependency manifest first so this layer caches across source changes
+COPY services/requirements.txt /app/services/requirements.txt
+RUN pip install --no-cache-dir -r /app/services/requirements.txt
 
-# Install deps
-RUN pip install --no-cache-dir "grpcio>=1.60" "protobuf>=4.25" "paho-mqtt>=1.6" \
-    "numpy>=1.24" "cryptography>=41.0" "py_ecc>=8.0.0"
-RUN pip install --no-cache-dir -e /app/h-fedchain
+# Full repo source: hfc_types, core, zkp, dataset, simulator, monitoring,
+# proto (pb2 files are checked in — no protoc needed at build time), services
+COPY . /app
 
-# Copy service entrypoints
-COPY services/ /app/
+# Non-root runtime user; /var/lib/hfc is the shared volume mount point for
+# node keys, WORM db and edge device keys (created with hfc ownership so the
+# named volume inherits it on first use)
+RUN useradd --uid 10001 --create-home hfc \
+    && mkdir -p /var/lib/hfc \
+    && chown -R hfc:hfc /var/lib/hfc
 
-# Expose gRPC ports
+USER hfc
+
 EXPOSE 50051 50052
 
-# Entrypoint reads SERVICE env var
+# Individual services override this command:
+#   python -m services.fog_service | services.cloud_service | services.edge_runner
 CMD ["python", "-m", "services.entrypoint"]

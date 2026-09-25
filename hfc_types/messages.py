@@ -19,7 +19,7 @@ class MessageType(Enum):
 class Gradient:
     node_id: str
     round: int
-    data: list[float]
+    data: "list[float] | bytes"
     signature: Optional[bytes] = None
 
 

@@ -176,7 +176,7 @@ class Orchestrator:
         if self.use_dataset:
             return self._generate_real_gradients(round_num)
 
-        from core.pki import generate_keypair, sign as pki_sign
+        from core.pki import generate_keypair, gradient_signed_message, sign as pki_sign
 
         grads: list[GradientWithProof] = []
         sk_map: dict[int, bytes] = {}
@@ -190,12 +190,12 @@ class Orchestrator:
             gid = f"adv_{d}" if is_adv else f"d{d}"
             if is_adv:
                 fake_sk, _ = generate_keypair()
-                sig = pki_sign(fake_sk, f"{gid}:{round_num}".encode())
+                sig = pki_sign(fake_sk, gradient_signed_message(gid, round_num, data))
             else:
                 device_sk, device_vk = generate_keypair()
                 cert = self.ca.issue_certificate(gid, device_vk)
                 self._certificates[gid] = cert
-                sig = pki_sign(device_sk, f"{gid}:{round_num}".encode())
+                sig = pki_sign(device_sk, gradient_signed_message(gid, round_num, data))
                 sk_map[d] = device_sk
             grads.append(GradientWithProof(
                 gradient=Gradient(node_id=gid, round=round_num, data=data, signature=sig),

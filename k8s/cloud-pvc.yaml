@@ -1,11 +1,14 @@
+# PersistentVolumeClaim backing /var/lib/hfc in the cloud pod
+# (WORM SQLite ledger + node keys). ReadWriteOnce and a single-replica
+# Deployment: one writer to the write-once ledger at a time.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: cloud-worm-pvc
-  namespace: hfedchain
+  namespace: h-fedchain
 spec:
   accessModes:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 10Gi
+      storage: 1Gi

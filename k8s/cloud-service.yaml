@@ -1,15 +1,30 @@
+# NodePort service for the cloud gRPC API (fog cluster-output submissions).
+#
+# T14 wiring: fog nodes run in docker compose OUTSIDE the cluster, so they
+# reach this cloud through the kind node container after
+# scripts/deploy-cloud.sh runs `docker network connect <compose-net>
+# h-fedchain-control-plane`:
+#   CLOUD_ADDRESS=h-fedchain-control-plane:30052   (deploy/docker-compose.e2e.yml)
+# NodePort binds on ALL node addresses (incl. the node's compose-network IP).
+# The same NodePort is also published on the host as 127.0.0.1:30052 via
+# deploy/kind-config.yaml extraPortMappings (debugging only). In-cluster
+# clients could still use the ClusterIP port (port: 50052) as before.
 apiVersion: v1
 kind: Service
 metadata:
-  name: cloud-service
-  namespace: hfedchain
+  name: cloud
+  namespace: h-fedchain
+  labels:
+    app: hfedchain
+    component: cloud
 spec:
+  type: NodePort
   selector:
     app: hfedchain
     component: cloud
   ports:
-  - port: 50051
-    targetPort: grpc
+  - name: grpc
+    port: 50052
+    targetPort: 50052
+    nodePort: 30052
     protocol: TCP
-    name: grpc
-  type: ClusterIP

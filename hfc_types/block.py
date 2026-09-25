@@ -35,6 +35,10 @@ class GlobalOutput:
     round_num: int
     regionals: list["RegionalOutput"] = field(default_factory=list)
     bytes_fog_inter: int = 0
+    # Compliance flag: False when the cloud's validation gate rejected the
+    # round (recorded anyway). Class-level default True keeps entries
+    # pickled before the field existed readable (getattr falls back here).
+    accepted: bool = True
 
 
 @dataclass

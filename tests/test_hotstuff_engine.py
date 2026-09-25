@@ -50,16 +50,23 @@ async def test_prepare_vote_emitted(engine):
 
 
 @pytest.mark.asyncio
-async def test_double_vote_rejected(engine):
+async def test_double_vote_rejected_for_conflicting_block(engine):
     await engine.start_round(round_num=1, is_leader=False)
     block = Block(
         round=1, gradient_hash=b"gh", qc_commit=None,
         stark_proof=None, accepted_devices=[], rejected_devices=[],
         timestamp=100.0, prev_hash=b"\x00" * 32,
     )
-    await engine.on_prepare(block)
+    other = Block(
+        round=1, gradient_hash=b"gh2", qc_commit=None,
+        stark_proof=None, accepted_devices=[], rejected_devices=[],
+        timestamp=200.0, prev_hash=b"\x00" * 32,
+    )
+    vote1 = await engine.on_prepare(block)
     vote2 = await engine.on_prepare(block)
-    assert vote2 is None
+    assert vote1 is not None
+    assert vote2 is not None, "same (round, hash) must be re-sendable"
+    assert await engine.on_prepare(other) is None
 
 
 @pytest.mark.asyncio

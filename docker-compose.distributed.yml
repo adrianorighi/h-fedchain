@@ -1,3 +1,33 @@
+# H-FedChain — single-compose local distributed pipeline
+#
+# Topology: 1 MQTT broker + 1 cloud + 2 clusters x 2 fog nodes + 2 edge
+#           runners (one per cluster, synthetic data by default).
+#
+#   edge(c1) --MQTT--> broker <--MQTT-- edge(c2)
+#      |                                    |
+#      v                                    v
+#   fog1  ===gRPC committee===  fog1b      (cluster c1)
+#   fog2  ===gRPC committee===  fog2b      (cluster c2)
+#      |_______________gRPC_______________|
+#                    |
+#                    v
+#        cloud (N_EXPECTED_CLUSTERS=2: waits for BOTH clusters)
+#
+# Committees are CLUSTER-LOCAL: each fog only drives rounds for the
+# gradients it receives on its cluster topic, so the round-robin leader
+# (sorted committee members, round % n) must be a fog that holds that
+# cluster's data. Cross-cluster PEERS deadlock the second cluster's
+# rounds (leader never receives those gradients -> cloud never pairs
+# the round). QUORUM=ceil(2n/3)=2 for n=2 -> both committee members
+# vote; F=0 honours n >= 3f+1.
+#
+# Usage:
+#   docker compose -f docker-compose.distributed.yml up -d
+#   docker compose -f docker-compose.distributed.yml logs -f edge edge-c2
+#
+# Env names below are copied from the code (services/entrypoint.py,
+# services/edge_runner.py) — do not rename without grepping the source.
+
 x-common: &common
   build:
     context: .
@@ -7,102 +37,53 @@ x-common: &common
   stop_grace_period: 5s
 
 services:
-  mqtt-broker:
+  # ------------------------------------------------------------------ broker
+  broker:
     image: eclipse-mosquitto:2
-    container_name: hfc-mqtt
+    container_name: hfc-broker
     ports:
       - "1883:1883"
-      - "9001:9001"
     volumes:
-      - ./config/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./deploy/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      # persistence dir: retained messages (registrations, models/global)
+      # require on-disk persistence to survive a broker restart
+      - mosquitto-data:/mosquitto/data
     networks:
       - hfc-net
-    deploy:
-      resources:
-        limits:
-          cpus: "0.5"
-          memory: 256M
-        reservations:
-          cpus: "0.25"
-          memory: 128M
+    restart: unless-stopped
 
-  fog1:
-    <<: *common
-    container_name: hfc-fog1
-    environment:
-      NODE_ID: "fog1"
-      N: "3"
-      F: "1"
-      GRPC_PORT: "50051"
-      MQTT_BROKER: "mqtt-broker"
-      MQTT_PORT: "1883"
-      SERVICE: "fog"
-      PEERS: "fog2:50051,fog3:50051"
-      VARIANT: "no_zkp"
-    ports:
-      - "50051:50051"
-    deploy:
-      resources:
-        limits:
-          cpus: "1"
-          memory: 512M
-        reservations:
-          cpus: "0.5"
-          memory: 256M
-
-  fog2:
-    <<: *common
-    container_name: hfc-fog2
-    environment:
-      NODE_ID: "fog2"
-      N: "3"
-      F: "1"
-      GRPC_PORT: "50051"
-      MQTT_BROKER: "mqtt-broker"
-      MQTT_PORT: "1883"
-      SERVICE: "fog"
-      PEERS: "fog1:50051,fog3:50051"
-      VARIANT: "no_zkp"
-    deploy:
-      resources:
-        limits:
-          cpus: "1"
-          memory: 512M
-        reservations:
-          cpus: "0.5"
-          memory: 256M
-
-  fog3:
-    <<: *common
-    container_name: hfc-fog3
-    environment:
-      NODE_ID: "fog3"
-      N: "3"
-      F: "1"
-      GRPC_PORT: "50051"
-      MQTT_BROKER: "mqtt-broker"
-      MQTT_PORT: "1883"
-      SERVICE: "fog"
-      PEERS: "fog1:50051,fog2:50051"
-      VARIANT: "no_zkp"
-    deploy:
-      resources:
-        limits:
-          cpus: "1"
-          memory: 512M
-        reservations:
-          cpus: "0.5"
-          memory: 256M
-
+  # ------------------------------------------------------------------- cloud
   cloud:
     <<: *common
     container_name: hfc-cloud
+    command: ["python", "-m", "services.cloud_service"]
     environment:
-      NODE_ID: "cloud"
-      GRPC_PORT: "50052"
+      # entrypoint dispatch: cloud branch (build_cloud_service); also set
+      # explicitly inside services/cloud_service.py __main__
       SERVICE: "cloud"
+      # gRPC listen port for fog cluster-output submissions
+      GRPC_PORT: "50052"
+      # cluster c1 + c2: aggregate a round only after BOTH clusters report
+      N_EXPECTED_CLUSTERS: "2"
+      # MQTT broker used to publish models/global (retained)
+      MQTT_BROKER: "broker"
+      MQTT_PORT: "1883"
+      # MQTT switch: "0"/"false"/"no" disables, anything else enables
+      MQTT_ENABLED: "1"
+      # WORM (write-once) ledger database — SQLite file on the shared volume
+      WORM_DB_PATH: "/var/lib/hfc/worm.db"
+      # global learning rate used when a round payload carries none
+      LEARNING_RATE: "0.01"
+    volumes:
+      # shared with fogs/edges: node keys, WORM db, edge device keys
+      - hfc-keys:/var/lib/hfc
     ports:
       - "50052:50052"
+    depends_on:
+      - broker
+    networks:
+      - hfc-net
+    restart: unless-stopped
     deploy:
       resources:
         limits:
@@ -112,6 +93,279 @@ services:
           cpus: "1"
           memory: 512M
 
+  # ------------------------------------------------------------------- fog1
+  fog1:
+    <<: *common
+    container_name: hfc-fog1
+    command: ["python", "-m", "services.fog_service"]
+    environment:
+      # entrypoint dispatch: fog branch (build_fog_service)
+      SERVICE: "fog"
+      # HotStuff node id (key file defaults to /var/lib/hfc/keys/{NODE_ID}.key)
+      NODE_ID: "fog1"
+      # MQTT topic namespace: gradients/c1 + register/c1/#
+      CLUSTER_ID: "c1"
+      # committee size = len(PEERS)+1 (entrypoint resolve_membership()
+      # re-derives this; set to the real value to avoid the override warning)
+      N: "2"
+      # tolerated faults — n=2 -> f=0 (n >= 3f+1); QUORUM=ceil(2n/3)=2
+      F: "0"
+      # fellow committee member (cluster-local: c1's other fog); parse
+      # format "host:port" → peer id "fog1b"
+      PEERS: "fog1b:50051"
+      # gRPC listen port (also the default peer port)
+      GRPC_PORT: "50051"
+      # MQTT broker + port this fog subscribes on (gradients/register topics)
+      MQTT_BROKER: "broker"
+      MQTT_PORT: "1883"
+      # where cluster outputs are submitted after consensus
+      CLOUD_ADDRESS: "cloud:50052"
+      # explicit per-fog key path inside the shared volume (no clash with fog2)
+      NODE_KEY_FILE: "/var/lib/hfc/keys/fog1.key"
+      # ZKP variant: no_zkp | snark | stark | full (paper default: no_zkp)
+      VARIANT: "no_zkp"
+      # HotStuff view-change vote timeout (seconds)
+      VOTE_TIMEOUT_S: "5.0"
+      # gradients aggregated per round; 0 would default to n-f=1 (a single
+      # device per round) — pin to the edge batch size (NUM_DEVICES=10)
+      GRADIENT_THRESHOLD: "10"
+    ports:
+      - "50051:50051"
+    volumes:
+      - hfc-keys:/var/lib/hfc
+    depends_on:
+      - broker
+      - cloud
+    networks:
+      - hfc-net
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+        reservations:
+          cpus: "0.5"
+          memory: 256M
+
+  # ------------------------------------------------------------------ fog1b
+  fog1b:
+    <<: *common
+    container_name: hfc-fog1b
+    command: ["python", "-m", "services.fog_service"]
+    environment:
+      SERVICE: "fog"
+      NODE_ID: "fog1b"
+      # second fog of cluster c1 (same cluster topic as fog1)
+      CLUSTER_ID: "c1"
+      N: "2"
+      # n=2 -> f=0 (n >= 3f+1); QUORUM=ceil(2n/3)=2 -> both c1 fogs vote
+      F: "0"
+      # fellow committee member (cluster-local: c1's other fog)
+      PEERS: "fog1:50051"
+      GRADIENT_THRESHOLD: "10"
+      GRPC_PORT: "50051"
+      MQTT_BROKER: "broker"
+      MQTT_PORT: "1883"
+      CLOUD_ADDRESS: "cloud:50052"
+      NODE_KEY_FILE: "/var/lib/hfc/keys/fog1b.key"
+      VARIANT: "no_zkp"
+      VOTE_TIMEOUT_S: "5.0"
+    ports:
+      # host mapping on a different port than fog1 (both listen on 50051)
+      - "50054:50051"
+    volumes:
+      - hfc-keys:/var/lib/hfc
+    depends_on:
+      - broker
+      - cloud
+    networks:
+      - hfc-net
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+        reservations:
+          cpus: "0.5"
+          memory: 256M
+
+  # ------------------------------------------------------------------- fog2
+  fog2:
+    <<: *common
+    container_name: hfc-fog2
+    command: ["python", "-m", "services.fog_service"]
+    environment:
+      SERVICE: "fog"
+      NODE_ID: "fog2"
+      # second edge cluster served by this fog
+      CLUSTER_ID: "c2"
+      N: "2"
+      # n=2 -> f=0 (n >= 3f+1); QUORUM=ceil(2n/3)=2 -> both c2 fogs vote
+      F: "0"
+      # fellow committee member (cluster-local: c2's other fog)
+      PEERS: "fog2b:50051"
+      GRPC_PORT: "50051"
+      MQTT_BROKER: "broker"
+      MQTT_PORT: "1883"
+      CLOUD_ADDRESS: "cloud:50052"
+      NODE_KEY_FILE: "/var/lib/hfc/keys/fog2.key"
+      VARIANT: "no_zkp"
+      VOTE_TIMEOUT_S: "5.0"
+      GRADIENT_THRESHOLD: "10"
+    ports:
+      # host mapping on a different port than fog1 (both listen on 50051)
+      - "50053:50051"
+    volumes:
+      - hfc-keys:/var/lib/hfc
+    depends_on:
+      - broker
+      - cloud
+    networks:
+      - hfc-net
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+        reservations:
+          cpus: "0.5"
+          memory: 256M
+
+  # ------------------------------------------------------------------ fog2b
+  fog2b:
+    <<: *common
+    container_name: hfc-fog2b
+    command: ["python", "-m", "services.fog_service"]
+    environment:
+      SERVICE: "fog"
+      NODE_ID: "fog2b"
+      # second fog of cluster c2 (same cluster topic as fog2)
+      CLUSTER_ID: "c2"
+      N: "2"
+      # n=2 -> f=0 (n >= 3f+1); QUORUM=ceil(2n/3)=2 -> both c2 fogs vote
+      F: "0"
+      # fellow committee member (cluster-local: c2's other fog)
+      PEERS: "fog2:50051"
+      GRADIENT_THRESHOLD: "10"
+      GRPC_PORT: "50051"
+      MQTT_BROKER: "broker"
+      MQTT_PORT: "1883"
+      CLOUD_ADDRESS: "cloud:50052"
+      NODE_KEY_FILE: "/var/lib/hfc/keys/fog2b.key"
+      VARIANT: "no_zkp"
+      VOTE_TIMEOUT_S: "5.0"
+    ports:
+      # host mapping on a different port than fog2 (both listen on 50051)
+      - "50055:50051"
+    volumes:
+      - hfc-keys:/var/lib/hfc
+    depends_on:
+      - broker
+      - cloud
+    networks:
+      - hfc-net
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+        reservations:
+          cpus: "0.5"
+          memory: 256M
+
+  # ------------------------------------------------------------------- edge
+  edge:
+    <<: *common
+    container_name: hfc-edge-c1
+    # finite job: runs ROUNDS then exits; restart only on failure (the
+    # progress file in KEY_DIR resumes where the previous run stopped)
+    command: ["python", "-m", "services.edge_runner"]
+    environment:
+      # MQTT broker + port used for registration/gradients/model wait
+      MQTT_BROKER: "broker"
+      MQTT_PORT: "1883"
+      # devices register on register/c1/* and upload to gradients/c1
+      CLUSTER_ID: "c1"
+      # per-cluster key + progress dir inside the shared volume
+      KEY_DIR: "/var/lib/hfc/keys/edge/c1"
+      # training rounds (edge stops after ROUNDS or cloud "converged")
+      ROUNDS: "10"
+      # devices d0..d9 — keep GRADIENT_THRESHOLD on fog1 in sync with this
+      NUM_DEVICES: "10"
+      # ZKP variant: no_zkp | snark | stark | full (snark => use_snark)
+      VARIANT: "no_zkp"
+      # synthetic gradients by default (no PTB-XL download in the container)
+      DATASET: "synthetic"
+      # to train on PTB-XL instead: uncomment DATASET below AND the ~/.ptbxl
+      # volume under `volumes:` (image already ships `wfdb`; first boot
+      # downloads ~2GB into the mounted dir):
+      # DATASET: "real"
+      # fraction of adversarial devices (label_flip); 0.0 = honest-only run
+      ADVERSARIAL_RATIO: "0.0"
+      # Dirichlet alpha for the non-IID partition across devices
+      ALPHA: "0.5"
+      # synthetic record count (raise for real-data runs)
+      MAX_RECORDS: "500"
+      # seconds to wait for models/global before the round is abandoned
+      MODEL_TIMEOUT_S: "120"
+      # learning rate fallback when the cloud payload carries none
+      LEARNING_RATE: "0.01"
+    volumes:
+      - hfc-keys:/var/lib/hfc
+      # - ${HOME}/.ptbxl:/home/hfc/.ptbxl   # only with DATASET=real
+    depends_on:
+      - broker
+      - fog1
+      - fog1b
+    networks:
+      - hfc-net
+    # finite job: never restart a successful run; on-failure retries resume
+    # from the progress file (max 3)
+    restart: on-failure:3
+
+  # ----------------------------------------------------------------- edge-c2
+  edge-c2:
+    <<: *common
+    container_name: hfc-edge-c2
+    command: ["python", "-m", "services.edge_runner"]
+    environment:
+      MQTT_BROKER: "broker"
+      MQTT_PORT: "1883"
+      # second cluster's devices: register/c2/* and gradients/c2
+      CLUSTER_ID: "c2"
+      # separate key dir so it never clashes with the c1 edge runner
+      KEY_DIR: "/var/lib/hfc/keys/edge/c2"
+      ROUNDS: "10"
+      NUM_DEVICES: "10"
+      VARIANT: "no_zkp"
+      DATASET: "synthetic"
+      # DATASET: "real"
+      ADVERSARIAL_RATIO: "0.0"
+      ALPHA: "0.5"
+      MAX_RECORDS: "500"
+      MODEL_TIMEOUT_S: "120"
+      LEARNING_RATE: "0.01"
+    volumes:
+      - hfc-keys:/var/lib/hfc
+      # - ${HOME}/.ptbxl:/home/hfc/.ptbxl   # only with DATASET=real
+    depends_on:
+      - broker
+      - fog2
+      - fog2b
+    networks:
+      - hfc-net
+    restart: on-failure:3
+
 networks:
   hfc-net:
     driver: bridge
+
+volumes:
+  # single shared volume: /var/lib/hfc for cloud (worm.db), fogs (node keys)
+  # and edges (device keys + progress) — subpaths never overlap
+  hfc-keys:
+  mosquitto-data:

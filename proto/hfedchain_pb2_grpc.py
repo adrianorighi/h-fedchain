@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-import proto.hfedchain_pb2 as hfedchain__pb2
+from proto import hfedchain_pb2 as proto_dot_hfedchain__pb2
 
 GRPC_GENERATED_VERSION = '1.82.1'
 GRPC_VERSION = grpc.__version__
@@ -18,7 +18,7 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in hfedchain_pb2_grpc.py depends on'
+        + ' but the generated code in proto/hfedchain_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
@@ -36,8 +36,8 @@ class FogConsensusStub:
         """
         self.ConsensusStream = channel.stream_stream(
                 '/hfedchain.FogConsensus/ConsensusStream',
-                request_serializer=hfedchain__pb2.ConsensusMessage.SerializeToString,
-                response_deserializer=hfedchain__pb2.ConsensusMessage.FromString,
+                request_serializer=proto_dot_hfedchain__pb2.ConsensusMessage.SerializeToString,
+                response_deserializer=proto_dot_hfedchain__pb2.ConsensusMessage.FromString,
                 _registered_method=True)
 
 
@@ -56,8 +56,8 @@ def add_FogConsensusServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'ConsensusStream': grpc.stream_stream_rpc_method_handler(
                     servicer.ConsensusStream,
-                    request_deserializer=hfedchain__pb2.ConsensusMessage.FromString,
-                    response_serializer=hfedchain__pb2.ConsensusMessage.SerializeToString,
+                    request_deserializer=proto_dot_hfedchain__pb2.ConsensusMessage.FromString,
+                    response_serializer=proto_dot_hfedchain__pb2.ConsensusMessage.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -85,8 +85,8 @@ class FogConsensus:
             request_iterator,
             target,
             '/hfedchain.FogConsensus/ConsensusStream',
-            hfedchain__pb2.ConsensusMessage.SerializeToString,
-            hfedchain__pb2.ConsensusMessage.FromString,
+            proto_dot_hfedchain__pb2.ConsensusMessage.SerializeToString,
+            proto_dot_hfedchain__pb2.ConsensusMessage.FromString,
             options,
             channel_credentials,
             insecure,
@@ -109,8 +109,8 @@ class CloudAggregationStub:
         """
         self.SubmitClusterOutput = channel.unary_unary(
                 '/hfedchain.CloudAggregation/SubmitClusterOutput',
-                request_serializer=hfedchain__pb2.ClusterOutput.SerializeToString,
-                response_deserializer=hfedchain__pb2.GlobalOutputMessage.FromString,
+                request_serializer=proto_dot_hfedchain__pb2.ClusterOutput.SerializeToString,
+                response_deserializer=proto_dot_hfedchain__pb2.GlobalOutputMessage.FromString,
                 _registered_method=True)
 
 
@@ -128,8 +128,8 @@ def add_CloudAggregationServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'SubmitClusterOutput': grpc.unary_unary_rpc_method_handler(
                     servicer.SubmitClusterOutput,
-                    request_deserializer=hfedchain__pb2.ClusterOutput.FromString,
-                    response_serializer=hfedchain__pb2.GlobalOutputMessage.SerializeToString,
+                    request_deserializer=proto_dot_hfedchain__pb2.ClusterOutput.FromString,
+                    response_serializer=proto_dot_hfedchain__pb2.GlobalOutputMessage.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -157,8 +157,8 @@ class CloudAggregation:
             request,
             target,
             '/hfedchain.CloudAggregation/SubmitClusterOutput',
-            hfedchain__pb2.ClusterOutput.SerializeToString,
-            hfedchain__pb2.GlobalOutputMessage.FromString,
+            proto_dot_hfedchain__pb2.ClusterOutput.SerializeToString,
+            proto_dot_hfedchain__pb2.GlobalOutputMessage.FromString,
             options,
             channel_credentials,
             insecure,
@@ -181,13 +181,13 @@ class ModelServiceStub:
         """
         self.GetModel = channel.unary_unary(
                 '/hfedchain.ModelService/GetModel',
-                request_serializer=hfedchain__pb2.Empty.SerializeToString,
-                response_deserializer=hfedchain__pb2.ModelDistribution.FromString,
+                request_serializer=proto_dot_hfedchain__pb2.Empty.SerializeToString,
+                response_deserializer=proto_dot_hfedchain__pb2.ModelDistribution.FromString,
                 _registered_method=True)
         self.PushModel = channel.unary_unary(
                 '/hfedchain.ModelService/PushModel',
-                request_serializer=hfedchain__pb2.ModelDistribution.SerializeToString,
-                response_deserializer=hfedchain__pb2.Empty.FromString,
+                request_serializer=proto_dot_hfedchain__pb2.ModelDistribution.SerializeToString,
+                response_deserializer=proto_dot_hfedchain__pb2.Empty.FromString,
                 _registered_method=True)
 
 
@@ -211,13 +211,13 @@ def add_ModelServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'GetModel': grpc.unary_unary_rpc_method_handler(
                     servicer.GetModel,
-                    request_deserializer=hfedchain__pb2.Empty.FromString,
-                    response_serializer=hfedchain__pb2.ModelDistribution.SerializeToString,
+                    request_deserializer=proto_dot_hfedchain__pb2.Empty.FromString,
+                    response_serializer=proto_dot_hfedchain__pb2.ModelDistribution.SerializeToString,
             ),
             'PushModel': grpc.unary_unary_rpc_method_handler(
                     servicer.PushModel,
-                    request_deserializer=hfedchain__pb2.ModelDistribution.FromString,
-                    response_serializer=hfedchain__pb2.Empty.SerializeToString,
+                    request_deserializer=proto_dot_hfedchain__pb2.ModelDistribution.FromString,
+                    response_serializer=proto_dot_hfedchain__pb2.Empty.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -245,8 +245,8 @@ class ModelService:
             request,
             target,
             '/hfedchain.ModelService/GetModel',
-            hfedchain__pb2.Empty.SerializeToString,
-            hfedchain__pb2.ModelDistribution.FromString,
+            proto_dot_hfedchain__pb2.Empty.SerializeToString,
+            proto_dot_hfedchain__pb2.ModelDistribution.FromString,
             options,
             channel_credentials,
             insecure,
@@ -272,8 +272,8 @@ class ModelService:
             request,
             target,
             '/hfedchain.ModelService/PushModel',
-            hfedchain__pb2.ModelDistribution.SerializeToString,
-            hfedchain__pb2.Empty.FromString,
+            proto_dot_hfedchain__pb2.ModelDistribution.SerializeToString,
+            proto_dot_hfedchain__pb2.Empty.FromString,
             options,
             channel_credentials,
             insecure,

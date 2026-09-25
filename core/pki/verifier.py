@@ -37,7 +37,10 @@ class VerificationPipeline:
             return result
         result.pki_ok = True
 
-        msg = f"{grad.gradient.node_id}:{grad.gradient.round}".encode()
+        from core.pki.gradient import gradient_signed_message
+        msg = gradient_signed_message(
+            grad.gradient.node_id, grad.gradient.round, grad.gradient.data
+        )
         if not pki_verify(cert.public_key, msg, grad.gradient.signature):
             result.reason = "pki_sig_fail"
             return result

@@ -1,4 +1,10 @@
 #!/bin/bash
+# H-FedChain — menu interativo dos CENÁRIOS DO SIMULATOR (experiments/*).
+# Este script NÃO é o pipeline distribuído (services + compose + kind):
+# para o fluxo distribuído completo (broker/fogs/edges + cloud) use
+#   bash scripts/e2e_local.sh          (smoke, 55 critérios)
+#   bash scripts/e2e_local.sh --down   (teardown)
+# Ver docs/07-deployment.md.
 set +e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"

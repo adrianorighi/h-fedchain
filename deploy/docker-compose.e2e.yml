@@ -1,0 +1,33 @@
+# e2e override for scripts/e2e_local.sh (T14). Used as:
+#   docker compose -f docker-compose.distributed.yml -f deploy/docker-compose.e2e.yml ...
+# Keeps the T12 base file untouched (docker compose config on the base file
+# stays valid). Only two concerns:
+#   1. fogs must submit cluster outputs to the cloud running in the kind
+#      cluster (deploy-cloud.sh connects this compose network to the kind
+#      node; NodePort 30052 listens on the node's container IP);
+#   2. the edge runs are short (3 rounds) with a tighter model timeout so a
+#      broken wiring fails within the e2e wait cap instead of 120s per round.
+# The compose `cloud` service is NOT started by the e2e (deploy-cloud.sh owns
+# the cloud there): e2e_local.sh always passes --no-deps with an explicit
+# service list, so fog/edge depends_on entries never pull it in.
+services:
+  fog1:
+    environment:
+      CLOUD_ADDRESS: "h-fedchain-control-plane:30052"
+  fog1b:
+    environment:
+      CLOUD_ADDRESS: "h-fedchain-control-plane:30052"
+  fog2:
+    environment:
+      CLOUD_ADDRESS: "h-fedchain-control-plane:30052"
+  fog2b:
+    environment:
+      CLOUD_ADDRESS: "h-fedchain-control-plane:30052"
+  edge:
+    environment:
+      ROUNDS: "3"
+      MODEL_TIMEOUT_S: "90"
+  edge-c2:
+    environment:
+      ROUNDS: "3"
+      MODEL_TIMEOUT_S: "90"

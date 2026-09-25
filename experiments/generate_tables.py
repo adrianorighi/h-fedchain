@@ -309,7 +309,7 @@ def build_comparison(results_dir: Path):
     if not collectors:
         return None, collectors, warnings
     tex = build_latex_table(collectors, COMPARISON_METRICS)
-    return tex, collectors, warnings
+    return tex.replace("%", r"\%"), collectors, warnings
 
 
 def build_batch_reference() -> list[dict]:

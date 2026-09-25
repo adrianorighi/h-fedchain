@@ -254,7 +254,14 @@ class FogNode:
     async def finalize_commit(self, qc_commit: QuorumCertificate, block: Block) -> Optional[LedgerEntry]:
         t_stark_start = time.perf_counter()
         self.hotstuff._last_proposal = block
-        entry = await self.hotstuff.on_qc_commit(qc_commit)
+        # Peer vks are provisioned by the orchestrator via _set_vk; filter
+        # unset placeholders (b"") so pki verification fails closed instead
+        # of raising on a malformed key.
+        vk_map = {
+            nid: vk for nid, vk in self._vk_map.items()
+            if isinstance(vk, bytes) and len(vk) == 32
+        }
+        entry = await self.hotstuff.on_qc_commit(qc_commit, vk_map=vk_map)
         if entry is not None and self._variant in ("stark", "full"):
             proof = await self.stark_prover.generate_proof(entry.block)
             updated_block = replace(entry.block, stark_proof=proof)
